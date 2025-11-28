@@ -7,8 +7,8 @@ Thank you for your interest in contributing! This document provides guidelines a
 1. Fork the repository
 2. Clone your fork:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/rebase-downstream.git
-   cd rebase-downstream
+   git clone https://github.com/YOUR_USERNAME/rebase-downstream-branches.git
+   cd rebase-downstream-branches
    ```
 3. Install dependencies:
    ```bash
@@ -21,19 +21,19 @@ Thank you for your interest in contributing! This document provides guidelines a
 
 ```bash
 # Run directly
-node bin/rebase-downstream.js --help
+node bin/rebase-downstream-branches.js --help
 
 # Or link globally for testing
 npm link
-rebase-downstream --help
+rebase-downstream-branches --help
 ```
 
 ### Project Structure
 
 ```
-rebase-downstream/
+rebase-downstream-branches/
 ├── bin/
-│   └── rebase-downstream.js   # CLI entry point
+│   └── rebase-downstream-branches.js   # CLI entry point
 ├── .github/workflows/         # CI/CD configuration (if added)
 ├── package.json
 ├── README.md
@@ -53,7 +53,7 @@ rebase-downstream/
 
 3. Test your changes:
    ```bash
-   node bin/rebase-downstream.js --dry-run
+   node bin/rebase-downstream-branches.js --dry-run
    ```
 
 4. Commit your changes:

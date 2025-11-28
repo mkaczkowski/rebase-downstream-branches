@@ -8,7 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ### Added
 
-- Initial open-source release of the `rebase-downstream` CLI.
+- Initial open-source release of the `rebase-downstream-branches` CLI.
 - Automatic discovery of downstream PR chains via GitHub CLI.
 - Support for GitHub Enterprise via auto-detected host, `GH_HOST`, or `--host`.
 - Force-with-lease pushes for safer branch updates.

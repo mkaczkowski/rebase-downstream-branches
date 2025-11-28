@@ -7,10 +7,10 @@
  * Uses GitHub CLI to find PRs that target the current branch.
  *
  * Usage:
- *   rebase-downstream                       # From current branch
- *   rebase-downstream <branch-name>         # From specific branch
- *   rebase-downstream --dry-run             # Preview only
- *   rebase-downstream --host <hostname>     # Use GitHub Enterprise
+ *   rebase-downstream-branches                       # From current branch
+ *   rebase-downstream-branches <branch-name>         # From specific branch
+ *   rebase-downstream-branches --dry-run             # Preview only
+ *   rebase-downstream-branches --host <hostname>     # Use GitHub Enterprise
  */
 
 const { execSync } = require("child_process");
@@ -241,10 +241,10 @@ function showHelp() {
   log("─".repeat(50));
   log("\nAutomatically discovers and rebases stacked PRs.", COLORS.dim);
   log("\nUsage:", COLORS.cyan);
-  log("  rebase-downstream                       # From current branch");
-  log("  rebase-downstream <branch>              # From specific branch");
-  log("  rebase-downstream --dry-run             # Preview only");
-  log("  rebase-downstream --host <hostname>     # Use GitHub Enterprise");
+  log("  rebase-downstream-branches                       # From current branch");
+  log("  rebase-downstream-branches <branch>              # From specific branch");
+  log("  rebase-downstream-branches --dry-run             # Preview only");
+  log("  rebase-downstream-branches --host <hostname>     # Use GitHub Enterprise");
   log("\nOptions:", COLORS.cyan);
   log("  -h, --help       Show this help message");
   log("  -v, --version    Show version number");
@@ -262,13 +262,13 @@ function showHelp() {
   log("  - https://cli.github.com/");
   log("\nExamples:", COLORS.cyan);
   log("  # Rebase all PRs stacked on current branch");
-  log("  rebase-downstream");
+  log("  rebase-downstream-branches");
   log("\n  # Rebase all PRs stacked on feature-branch");
-  log("  rebase-downstream feature-branch");
+  log("  rebase-downstream-branches feature-branch");
   log("\n  # Preview what would be rebased");
-  log("  rebase-downstream --dry-run");
+  log("  rebase-downstream-branches --dry-run");
   log("\n  # Use GitHub Enterprise");
-  log("  rebase-downstream --host github.mycompany.com");
+  log("  rebase-downstream-branches --host github.mycompany.com");
   log("");
 }
 
@@ -310,7 +310,7 @@ function main() {
   }
 
   if (options.version) {
-    log(`rebase-downstream v${VERSION}`);
+    log(`rebase-downstream-branches v${VERSION}`);
     process.exit(0);
   }
 

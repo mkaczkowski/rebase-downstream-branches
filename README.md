@@ -1,8 +1,8 @@
 # Rebase Downstream Branches
 
-[![npm version](https://img.shields.io/npm/v/rebase-downstream.svg)](https://www.npmjs.com/package/rebase-downstream)
+[![npm version](https://img.shields.io/npm/v/rebase-downstream-branches.svg)](https://www.npmjs.com/package/rebase-downstream-branches)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node.js Version](https://img.shields.io/node/v/rebase-downstream.svg)](https://nodejs.org)
+[![Node.js Version](https://img.shields.io/node/v/rebase-downstream-branches.svg)](https://nodejs.org)
 
 A CLI tool that automatically discovers and rebases all downstream branches in a stacked PR chain using GitHub CLI.
 
@@ -29,10 +29,10 @@ This tool automatically:
 
 ```bash
 # Install globally
-npm install -g rebase-downstream
+npm install -g rebase-downstream-branches
 
 # Or use npx directly
-npx rebase-downstream [options]
+npx rebase-downstream-branches [options]
 ```
 
 ## Prerequisites
@@ -53,16 +53,16 @@ gh auth login
 
 ```bash
 # Rebase all PRs stacked on current branch
-rebase-downstream
+rebase-downstream-branches
 
 # Rebase all PRs stacked on a specific branch
-rebase-downstream feature-branch
+rebase-downstream-branches feature-branch
 
 # Preview what would be rebased (dry run)
-rebase-downstream --dry-run
+rebase-downstream-branches --dry-run
 
 # Use with GitHub Enterprise
-rebase-downstream --host github.mycompany.com
+rebase-downstream-branches --host github.mycompany.com
 ```
 
 ### Options
@@ -77,7 +77,7 @@ rebase-downstream --host github.mycompany.com
 ## Example
 
 ```bash
-$ rebase-downstream feature-a --dry-run
+$ rebase-downstream-branches feature-a --dry-run
 
 🔍 Discovering PR chain starting from: feature-a
    Found: #102 feature-b → feature-a
@@ -113,10 +113,10 @@ The tool automatically detects GitHub Enterprise hosts from your remote URL. You
 
 ```bash
 # Auto-detection (from git remote)
-rebase-downstream
+rebase-downstream-branches
 
 # Manual specification
-rebase-downstream --host github.mycompany.com
+rebase-downstream-branches --host github.mycompany.com
 ```
 
 The CLI will also respect the `GH_HOST` environment variable if it is already configured for the GitHub CLI.
@@ -130,14 +130,14 @@ The CLI will also respect the `GH_HOST` environment variable if it is already co
 git push origin feature-a
 
 # Rebase all downstream PRs
-rebase-downstream feature-a
+rebase-downstream-branches feature-a
 ```
 
 ### Before starting work
 
 ```bash
 # Preview the chain from main
-rebase-downstream main --dry-run
+rebase-downstream-branches main --dry-run
 ```
 
 ### Handle conflicts
