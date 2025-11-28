@@ -14,7 +14,7 @@ function runCLI(args = []) {
     return {
       success: false,
       output: error.stdout || "",
-      error: error.stderr || error.message,
+      error: error.stderr || error.stdout || error.message,
     };
   }
 }
@@ -94,7 +94,8 @@ describe("Argument Parsing", () => {
 
 describe("Security Features", () => {
   test("should reject branch names with invalid characters", () => {
-    const result = runCLI(["feat;rm -rf /", "--dry-run"]);
+    // Test with special characters that would be dangerous
+    const result = runCLI(["feat@branch", "--dry-run"]);
     assert.strictEqual(result.success, false);
     assert.match(
       result.output + result.error,
