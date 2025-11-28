@@ -7,8 +7,8 @@ Thank you for your interest in contributing! This document provides guidelines a
 1. Fork the repository
 2. Clone your fork:
    ```bash
-   git clone https://github.com/YOUR_USERNAME/rebase-downstream-branches.git
-   cd rebase-downstream-branches
+   git clone https://github.com/YOUR_USERNAME/rebase-downstream.git
+   cd rebase-downstream
    ```
 3. Install dependencies:
    ```bash
@@ -31,7 +31,7 @@ rebase-downstream --help
 ### Project Structure
 
 ```
-rebase-downstream-branches/
+rebase-downstream/
 ├── bin/
 │   └── rebase-downstream.js   # CLI entry point
 ├── .github/workflows/         # CI/CD configuration (if added)
