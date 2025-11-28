@@ -88,12 +88,16 @@ function detectGitHubHost() {
  * Find all PRs that target a specific branch using GitHub CLI
  */
 function findPRsTargeting(baseBranch, host) {
-  const hostFlag = host ? `--hostname ${host} ` : "";
-
   try {
+    // Set GH_HOST environment variable if using GitHub Enterprise
+    const env = { ...process.env };
+    if (host) {
+      env.GH_HOST = host;
+    }
+
     const result = exec(
-      `gh ${hostFlag}pr list --base "${baseBranch}" --state open --json number,headRefName,title --limit 50`,
-      { silent: true }
+      `gh pr list --base "${baseBranch}" --state open --json number,headRefName,title --limit 50`,
+      { silent: true, env }
     );
 
     if (!result) return [];
