@@ -1,0 +1,46 @@
+{
+  "name": "rebase-downstream-branches",
+  "version": "1.0.0",
+  "description": "Automatically discover and rebase all downstream branches in a stacked PR chain using GitHub CLI",
+  "type": "commonjs",
+  "main": "bin/rebase-downstream.js",
+  "bin": {
+    "rebase-downstream": "./bin/rebase-downstream.js"
+  },
+  "files": [
+    "bin"
+  ],
+  "scripts": {
+    "start": "node bin/rebase-downstream.js",
+    "test": "node bin/rebase-downstream.js --help",
+    "prepublishOnly": "npm run test"
+  },
+  "keywords": [
+    "git",
+    "rebase",
+    "stacked-prs",
+    "github",
+    "pull-request",
+    "pr-chain",
+    "downstream",
+    "branches",
+    "cli",
+    "automation"
+  ],
+  "author": "mkaczkowski",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/mkaczkowski/rebase-downstream-branches.git"
+  },
+  "bugs": {
+    "url": "https://github.com/mkaczkowski/rebase-downstream-branches/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "homepage": "https://github.com/mkaczkowski/rebase-downstream-branches#readme",
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
