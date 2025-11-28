@@ -40,6 +40,7 @@ This tool includes multiple layers of protection to prevent accidental damage:
 ### 2. Protected Branch Detection
 
 The tool automatically prevents rebasing of commonly protected branches:
+
 - `main`, `master`
 - `develop`, `development`
 - `staging`, `production`, `prod`
@@ -55,11 +56,13 @@ If any branch in the PR chain is protected, the operation is aborted before any 
 ### 4. Automatic Backups
 
 Before rebasing each branch, the tool:
+
 - Creates a backup ref at `refs/backup/<branch>-<timestamp>`
 - Displays the backup location after completion
 - Provides instructions for restoring from backup if needed
 
 **To restore a branch from backup:**
+
 ```bash
 git checkout <branch>
 git reset --hard <backup-ref>
@@ -83,26 +86,31 @@ git reset --hard <backup-ref>
 When using this tool:
 
 1. **Always use `--dry-run` first** - Preview changes before applying them
+
    ```bash
    rebase-downstream-branches --dry-run
    ```
 
 2. **Review the PR chain** - Ensure all branches in the chain are intentional
+
    ```bash
    # The tool will show the complete chain before asking for confirmation
    ```
 
 3. **Keep your local repository clean** - Commit or stash changes before running
+
    ```bash
    git status  # Should be clean
    ```
 
 4. **Verify GitHub CLI authentication** - Ensure you're authenticated as the right user
+
    ```bash
    gh auth status
    ```
 
 5. **Use in CI/CD carefully** - If automating, use the `--yes` flag and ensure proper access controls
+
    ```bash
    rebase-downstream-branches --yes  # Skip confirmation
    ```
@@ -171,6 +179,7 @@ git log <backup-ref> -n 1
 ## Dependencies
 
 This tool has zero runtime dependencies to minimize supply chain risks:
+
 - Uses only Node.js built-in modules (`child_process`, `readline`)
 - Requires external tools: `git` and `gh` (GitHub CLI)
 
