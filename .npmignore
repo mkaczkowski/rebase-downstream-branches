@@ -3,14 +3,25 @@
 .gitignore
 .idea/
 .vscode/
+.editorconfig
+.eslintrc.json
+.prettierrc.json
+.prettierignore
 
 # Documentation (not needed in npm package)
 CONTRIBUTING.md
 CODE_OF_CONDUCT.md
 CHANGELOG.md
+REVIEW.md
 
 # Test files
 test/
 coverage/
 *.test.js
+
+# Build artifacts
+node_modules/
+dist/
+.DS_Store
+
 

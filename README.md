@@ -3,6 +3,7 @@
 [![npm version](https://img.shields.io/npm/v/rebase-downstream-branches.svg)](https://www.npmjs.com/package/rebase-downstream-branches)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/node/v/rebase-downstream-branches.svg)](https://nodejs.org)
+[![CI Status](https://github.com/mkaczkowski/rebase-downstream-branches/workflows/CI/badge.svg)](https://github.com/mkaczkowski/rebase-downstream-branches/actions)
 
 A CLI tool that automatically discovers and rebases all downstream branches in a stacked PR chain using GitHub CLI.
 
@@ -23,7 +24,7 @@ This tool automatically:
 1. **Discovers** all PRs that target your branch (using GitHub CLI)
 2. **Follows the chain** to find all downstream PRs recursively
 3. **Rebases** each branch onto its updated parent
-4. **Force pushes** the rebased branches
+4. **Force pushes** the rebased branches (using `--force-with-lease`)
 
 ## Installation
 
@@ -39,6 +40,7 @@ npx rebase-downstream-branches [options]
 
 - [GitHub CLI](https://cli.github.com/) installed and authenticated
 - Git repository with remote origin
+- Node.js >= 18.0.0
 
 ```bash
 # Install GitHub CLI
@@ -103,8 +105,8 @@ $ rebase-downstream-branches feature-a --dry-run
 3. **Rebasing**: For each branch in the chain:
    - Checks out the branch
    - Resets to the target branch
-   - Cherry-picks the branch's own commits
-   - Force pushes to origin
+   - Cherry-picks all the branch's own commits (in order)
+   - Force pushes to origin (using `--force-with-lease`)
 4. **Conflict Handling**: If conflicts occur, the script stops and provides instructions for manual resolution
 
 ## GitHub Enterprise
@@ -149,6 +151,10 @@ If the script encounters a merge conflict:
 3. Continue the cherry-pick: `git cherry-pick --continue`
 4. Re-run the script to continue with remaining branches
 
+## Security
+
+This tool uses `--force-with-lease` for safer force pushes, which prevents accidentally overwriting changes that you haven't seen. See our [Security Policy](SECURITY.md) for more details.
+
 ## Contributing
 
 Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md) for details.
@@ -164,3 +170,9 @@ This project follows a [Code of Conduct](CODE_OF_CONDUCT.md). By participating, 
 ## Changelog
 
 See [CHANGELOG.md](CHANGELOG.md) for release notes.
+
+## Related Projects
+
+- [gh](https://cli.github.com/) - GitHub CLI
+- [git-town](https://www.git-town.com/) - Git workflow tool
+- [git-stack](https://github.com/gitext-rs/git-stack) - Stacked Git development

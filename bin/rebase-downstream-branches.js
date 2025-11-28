@@ -14,6 +14,7 @@
  */
 
 const { execSync } = require("child_process");
+const readline = require("readline");
 
 const VERSION = require("../package.json").version;
 
@@ -60,6 +61,87 @@ function getRemoteUrl() {
 }
 
 /**
+ * Sanitize branch name to prevent command injection
+ */
+function sanitizeBranchName(branch) {
+  // Allow alphanumeric, hyphens, underscores, forward slashes, dots
+  // This matches valid git branch names
+  const validPattern = /^[a-zA-Z0-9/_.-]+$/;
+  
+  if (!validPattern.test(branch)) {
+    throw new Error(
+      `Invalid branch name: "${branch}". Branch names can only contain letters, numbers, /, _, ., and -`
+    );
+  }
+  
+  // Additional checks for dangerous patterns
+  if (branch.includes("..") || branch.startsWith("-")) {
+    throw new Error(
+      `Potentially unsafe branch name: "${branch}". Branch names cannot start with - or contain ..`
+    );
+  }
+  
+  return branch;
+}
+
+/**
+ * Check if a branch is protected (main, master, develop, etc.)
+ */
+function isProtectedBranch(branch) {
+  const protectedBranches = [
+    "main",
+    "master",
+    "develop",
+    "development",
+    "staging",
+    "production",
+    "prod",
+  ];
+  
+  return protectedBranches.includes(branch.toLowerCase());
+}
+
+/**
+ * Get list of branches that would be modified
+ */
+function getBranchesInChain(chain) {
+  return chain.map((item) => item.branch);
+}
+
+/**
+ * Prompt user for confirmation
+ */
+function promptConfirmation(message) {
+  return new Promise((resolve) => {
+    const rl = readline.createInterface({
+      input: process.stdin,
+      output: process.stdout,
+    });
+
+    rl.question(`${message} (y/N): `, (answer) => {
+      rl.close();
+      resolve(answer.toLowerCase() === "y" || answer.toLowerCase() === "yes");
+    });
+  });
+}
+
+/**
+ * Create backup refs for branches before rebasing
+ */
+function createBackup(branch) {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
+  const backupRef = `refs/backup/${branch}-${timestamp}`;
+  
+  try {
+    exec(`git update-ref ${backupRef} ${branch}`, { silent: true });
+    return backupRef;
+  } catch (error) {
+    log(`⚠️  Could not create backup for ${branch}`, COLORS.yellow);
+    return null;
+  }
+}
+
+/**
  * Detect GitHub Enterprise host from remote URL
  */
 function detectGitHubHost() {
@@ -89,6 +171,9 @@ function detectGitHubHost() {
  */
 function findPRsTargeting(baseBranch, host) {
   try {
+    // Sanitize branch name to prevent command injection
+    const safeBranch = sanitizeBranchName(baseBranch);
+    
     // Set GH_HOST environment variable if using GitHub Enterprise
     const env = { ...process.env };
     if (host) {
@@ -96,7 +181,7 @@ function findPRsTargeting(baseBranch, host) {
     }
 
     const result = exec(
-      `gh pr list --base "${baseBranch}" --state open --json number,headRefName,title --limit 50`,
+      `gh pr list --base "${safeBranch}" --state open --json number,headRefName,title --limit 50`,
       { silent: true, env }
     );
 
@@ -105,7 +190,7 @@ function findPRsTargeting(baseBranch, host) {
     const prs = JSON.parse(result);
     return prs.map((pr) => ({
       number: pr.number,
-      branch: pr.headRefName,
+      branch: sanitizeBranchName(pr.headRefName),
       title: pr.title,
       target: baseBranch,
     }));
@@ -131,6 +216,7 @@ function buildPRChain(startBranch, host) {
     log(`   Using GitHub host: ${host}`, COLORS.dim);
   }
 
+  // eslint-disable-next-line no-constant-condition
   while (true) {
     if (visited.has(currentBranch)) {
       log(`⚠️  Circular reference detected at ${currentBranch}`, COLORS.yellow);
@@ -167,77 +253,79 @@ function buildPRChain(startBranch, host) {
 /**
  * Get the last commit hash that belongs to just this branch (not inherited)
  */
-function getBranchOwnCommit(branch, targetBranch) {
+function getBranchOwnCommits(branch, targetBranch) {
   try {
     // Get commits that are in this branch but not in target
     const commits = exec(`git log ${targetBranch}..${branch} --oneline`, {
       silent: true,
     }).trim();
 
-    if (!commits) return null;
+    if (!commits) return [];
 
     const lines = commits.split("\n").filter(Boolean);
-    // Return the oldest commit (last line) - that's the branch's own commit
-    // If there's only one commit, return it
-    if (lines.length === 1) {
-      return lines[0].split(" ")[0];
-    }
-
-    // For multiple commits, we want the most recent one (first line)
-    return lines[0].split(" ")[0];
+    // Return all commit hashes that belong to this branch
+    return lines.map((line) => line.split(" ")[0]);
   } catch {
-    return null;
+    return [];
   }
 }
 
 function rebaseBranch(branch, onto) {
   log(`\n📦 Rebasing ${branch} onto ${onto}...`, COLORS.cyan);
 
-  // Get the commit hash before we switch
-  const commitHash = getBranchOwnCommit(branch, onto);
+  // Get the commit hashes before we switch
+  const commitHashes = getBranchOwnCommits(branch, onto);
 
-  if (!commitHash) {
-    log(`   ⏭️  No unique commits found, skipping`, COLORS.yellow);
+  if (commitHashes.length === 0) {
+    log("   ⏭️  No unique commits found, skipping", COLORS.yellow);
     return true;
   }
 
-  log(`   Commit to cherry-pick: ${commitHash}`, COLORS.dim);
+  log(
+    `   Commits to cherry-pick: ${commitHashes.reverse().join(", ")}`,
+    COLORS.dim
+  );
 
   // Checkout and reset
   exec(`git checkout ${branch}`, { silent: true });
   exec(`git reset --hard ${onto}`, { silent: true });
 
-  // Cherry-pick the commit
-  try {
-    exec(`git cherry-pick ${commitHash}`, { silent: true });
-    log(`   ✅ Cherry-picked successfully`, COLORS.green);
-  } catch (error) {
-    // Check if there's a conflict
-    const status = exec("git status --porcelain", { silent: true }) || "";
-    if (
-      status.includes("UU") ||
-      status.includes("AA") ||
-      status.includes("DD")
-    ) {
-      log(`   ⚠️  Conflict detected! Resolve manually:`, COLORS.yellow);
-      log(`      1. Fix conflicts in the files`, COLORS.dim);
-      log(`      2. git add <files>`, COLORS.dim);
-      log(`      3. git cherry-pick --continue`, COLORS.dim);
-      log(`      4. Re-run this script`, COLORS.dim);
-      process.exit(1);
+  // Cherry-pick all commits in order (oldest first)
+  for (const commitHash of commitHashes) {
+    try {
+      exec(`git cherry-pick ${commitHash}`, { silent: true });
+      log(`   ✅ Cherry-picked ${commitHash}`, COLORS.green);
+    } catch (error) {
+      // Check if there's a conflict
+      const status = exec("git status --porcelain", { silent: true }) || "";
+      if (
+        status.includes("UU") ||
+        status.includes("AA") ||
+        status.includes("DD")
+      ) {
+        log("   ⚠️  Conflict detected! Resolve manually:", COLORS.yellow);
+        log("      1. Fix conflicts in the files", COLORS.dim);
+        log("      2. git add <files>", COLORS.dim);
+        log("      3. git cherry-pick --continue", COLORS.dim);
+        log("      4. Re-run this script", COLORS.dim);
+        process.exit(1);
+      }
+      // If empty commit, skip
+      exec("git cherry-pick --skip", { silent: true, ignoreError: true });
+      log(
+        `   ⏭️  Skipped ${commitHash} (no changes or already applied)`,
+        COLORS.yellow
+      );
     }
-    // If empty commit, skip
-    exec("git cherry-pick --skip", { silent: true, ignoreError: true });
-    log(`   ⏭️  Skipped (no changes or already applied)`, COLORS.yellow);
   }
 
   return true;
 }
 
 function pushBranch(branch) {
-  log(`   🚀 Force pushing...`, COLORS.blue);
+  log("   🚀 Force pushing...", COLORS.blue);
   exec(`git push origin ${branch} --force-with-lease`, { silent: true });
-  log(`   ✅ Pushed`, COLORS.green);
+  log("   ✅ Pushed", COLORS.green);
 }
 
 function showHelp() {
@@ -245,22 +333,36 @@ function showHelp() {
   log("─".repeat(50));
   log("\nAutomatically discovers and rebases stacked PRs.", COLORS.dim);
   log("\nUsage:", COLORS.cyan);
-  log("  rebase-downstream-branches                       # From current branch");
-  log("  rebase-downstream-branches <branch>              # From specific branch");
+  log(
+    "  rebase-downstream-branches                       # From current branch"
+  );
+  log(
+    "  rebase-downstream-branches <branch>              # From specific branch"
+  );
   log("  rebase-downstream-branches --dry-run             # Preview only");
-  log("  rebase-downstream-branches --host <hostname>     # Use GitHub Enterprise");
+  log(
+    "  rebase-downstream-branches --host <hostname>     # Use GitHub Enterprise"
+  );
   log("\nOptions:", COLORS.cyan);
   log("  -h, --help       Show this help message");
   log("  -v, --version    Show version number");
   log("  --dry-run        Preview changes without applying them");
+  log("  -y, --yes        Skip confirmation prompt (automatic yes)");
   log(
     "  --host <host>    GitHub Enterprise hostname (auto-detected or from GH_HOST)"
   );
   log("\nHow it works:", COLORS.cyan);
   log("  1. Finds PRs that target the specified branch");
   log("  2. Follows the chain to find all downstream PRs");
-  log("  3. Rebases each branch onto its updated parent");
-  log("  4. Force pushes the rebased branches");
+  log("  3. Creates backup refs for safety");
+  log("  4. Rebases each branch onto its updated parent");
+  log("  5. Force pushes the rebased branches (with --force-with-lease)");
+  log("\nSafety features:", COLORS.cyan);
+  log("  • Branch name validation to prevent command injection");
+  log("  • Protected branch detection (main, master, develop, etc.)");
+  log("  • Confirmation prompt before making changes");
+  log("  • Backup refs created before rebasing");
+  log("  • Uses --force-with-lease for safer force pushes");
   log("\nRequires:", COLORS.cyan);
   log("  - GitHub CLI (gh) installed and authenticated");
   log("  - https://cli.github.com/");
@@ -271,6 +373,8 @@ function showHelp() {
   log("  rebase-downstream-branches feature-branch");
   log("\n  # Preview what would be rebased");
   log("  rebase-downstream-branches --dry-run");
+  log("\n  # Skip confirmation prompt");
+  log("  rebase-downstream-branches --yes");
   log("\n  # Use GitHub Enterprise");
   log("  rebase-downstream-branches --host github.mycompany.com");
   log("");
@@ -283,6 +387,7 @@ function parseArgs(args) {
     help: false,
     version: false,
     host: null,
+    skipConfirmation: false,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -296,6 +401,8 @@ function parseArgs(args) {
       options.dryRun = true;
     } else if (arg === "--host" && args[i + 1]) {
       options.host = args[++i];
+    } else if (arg === "--yes" || arg === "-y") {
+      options.skipConfirmation = true;
     } else if (!arg.startsWith("-")) {
       options.branch = arg;
     }
@@ -327,15 +434,51 @@ function main() {
     process.exit(1);
   }
 
+  // Verify we're in a git repository
+  try {
+    exec("git rev-parse --git-dir", { silent: true });
+  } catch {
+    log("❌ Not a git repository.", COLORS.red);
+    log("   Please run this command from within a git repository.", COLORS.dim);
+    process.exit(1);
+  }
+
+  // Check for gh authentication
+  try {
+    exec("gh auth status", { silent: true });
+  } catch {
+    log("❌ GitHub CLI is not authenticated.", COLORS.red);
+    log("   Run: gh auth login", COLORS.dim);
+    process.exit(1);
+  }
+
   // Auto-detect host if not provided
   const host = options.host || process.env.GH_HOST || detectGitHubHost();
 
   // Get the starting branch
-  const startBranch = options.branch || getCurrentBranch();
+  let startBranch = options.branch || getCurrentBranch();
 
-  if (startBranch === "main" || startBranch === "master") {
+  if (!startBranch) {
+    log("❌ Could not determine current branch.", COLORS.red);
+    process.exit(1);
+  }
+
+  // Sanitize the starting branch name
+  try {
+    startBranch = sanitizeBranchName(startBranch);
+  } catch (error) {
+    log(`❌ ${error.message}`, COLORS.red);
+    process.exit(1);
+  }
+
+  // Check if starting from a protected branch
+  if (isProtectedBranch(startBranch)) {
     log(
-      `\n⚠️  Starting from ${startBranch} - this will find ALL stacked PRs`,
+      `\n⚠️  Starting from protected branch "${startBranch}"`,
+      COLORS.yellow
+    );
+    log(
+      "   This will find ALL stacked PRs targeting this branch.",
       COLORS.yellow
     );
   }
@@ -346,6 +489,23 @@ function main() {
   if (chain.length === 0) {
     log("\n✅ No downstream PRs found. Nothing to rebase.", COLORS.green);
     process.exit(0);
+  }
+
+  // Check for protected branches in the chain
+  const protectedBranchesInChain = chain
+    .map((item) => item.branch)
+    .filter(isProtectedBranch);
+
+  if (protectedBranchesInChain.length > 0) {
+    log("\n❌ Cannot rebase protected branches:", COLORS.red);
+    protectedBranchesInChain.forEach((branch) => {
+      log(`   • ${branch}`, COLORS.red);
+    });
+    log(
+      "\n   Protected branches: main, master, develop, development, staging, production, prod",
+      COLORS.dim
+    );
+    process.exit(1);
   }
 
   log("\n🔄 PR Chain to rebase:", COLORS.bright);
@@ -361,46 +521,105 @@ function main() {
   }
 
   log("\n⚠️  This will force-push the above branches.", COLORS.yellow);
+  log(
+    "   Backup refs will be created at refs/backup/<branch>-<timestamp>",
+    COLORS.dim
+  );
 
-  // Save current branch
-  const originalBranch = getCurrentBranch();
+  // Prompt for confirmation unless --yes flag is provided
+  (async () => {
+    if (!options.skipConfirmation) {
+      const confirmed = await promptConfirmation(
+        "\n❓ Do you want to continue?"
+      );
+      if (!confirmed) {
+        log("\n❌ Aborted by user.", COLORS.yellow);
+        process.exit(0);
+      }
+    }
 
-  log("\n🚀 Starting rebase...", COLORS.bright);
-  log("─".repeat(50));
+    // Save current branch
+    const originalBranch = getCurrentBranch();
 
-  // Fetch latest
-  log("\n📥 Fetching latest from origin...", COLORS.cyan);
-  exec("git fetch origin", { silent: true });
+    log("\n🚀 Starting rebase...", COLORS.bright);
+    log("─".repeat(50));
 
-  let successCount = 0;
-
-  for (const item of chain) {
+    // Fetch latest
+    log("\n📥 Fetching latest from origin...", COLORS.cyan);
     try {
-      // Make sure we have the latest target
-      exec(`git checkout ${item.target}`, { silent: true, ignoreError: true });
-      exec(`git pull origin ${item.target} --ff-only`, {
+      exec("git fetch origin", { silent: true });
+    } catch (error) {
+      log(`⚠️  Could not fetch from origin: ${error.message}`, COLORS.yellow);
+    }
+
+    const backups = [];
+    let successCount = 0;
+
+    for (const item of chain) {
+      try {
+        // Create backup before rebasing
+        log(`\n💾 Creating backup for ${item.branch}...`, COLORS.cyan);
+        const backupRef = createBackup(item.branch);
+        if (backupRef) {
+          backups.push({ branch: item.branch, ref: backupRef });
+          log(`   ✅ Backup created: ${backupRef}`, COLORS.green);
+        }
+
+        // Make sure we have the latest target
+        exec(`git checkout ${item.target}`, {
+          silent: true,
+          ignoreError: true,
+        });
+        exec(`git pull origin ${item.target} --ff-only`, {
+          silent: true,
+          ignoreError: true,
+        });
+
+        rebaseBranch(item.branch, item.target);
+        pushBranch(item.branch);
+        successCount++;
+      } catch (error) {
+        log(`\n❌ Failed at ${item.branch}: ${error.message}`, COLORS.red);
+        if (backups.length > 0) {
+          log("\n💡 To restore from backup:", COLORS.cyan);
+          backups.forEach(({ branch, ref }) => {
+            log(`   git checkout ${branch}`, COLORS.dim);
+            log(`   git reset --hard ${ref}`, COLORS.dim);
+          });
+        }
+        break;
+      }
+    }
+
+    // Return to original branch
+    try {
+      exec(`git checkout ${originalBranch}`, {
         silent: true,
         ignoreError: true,
       });
-
-      rebaseBranch(item.branch, item.target);
-      pushBranch(item.branch);
-      successCount++;
     } catch (error) {
-      log(`\n❌ Failed at ${item.branch}: ${error.message}`, COLORS.red);
-      break;
+      log(
+        `⚠️  Could not return to original branch ${originalBranch}`,
+        COLORS.yellow
+      );
     }
-  }
 
-  // Return to original branch
-  exec(`git checkout ${originalBranch}`, { silent: true, ignoreError: true });
+    log("\n" + "─".repeat(50));
+    log(`✅ Rebased ${successCount}/${chain.length} branches`, COLORS.green);
 
-  log("\n" + "─".repeat(50));
-  log(`✅ Rebased ${successCount}/${chain.length} branches`, COLORS.green);
+    if (backups.length > 0) {
+      log("\n💾 Backups created:", COLORS.cyan);
+      backups.forEach(({ branch, ref }) => {
+        log(`   ${branch}: ${ref}`, COLORS.dim);
+      });
+      log("\n   To restore a branch:", COLORS.dim);
+      log("   git checkout <branch> && git reset --hard <backup-ref>", COLORS.dim);
+    }
 
-  if (successCount < chain.length) {
-    process.exit(1);
-  }
+    if (successCount < chain.length) {
+      process.exit(1);
+    }
+  })();
 }
 
 main();

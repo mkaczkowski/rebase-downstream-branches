@@ -45,6 +45,7 @@ rebase-downstream-branches/
 ## Making Changes
 
 1. Create a new branch:
+
    ```bash
    git checkout -b feature/your-feature-name
    ```
@@ -52,16 +53,19 @@ rebase-downstream-branches/
 2. Make your changes
 
 3. Test your changes:
+
    ```bash
    node bin/rebase-downstream-branches.js --dry-run
    ```
 
 4. Commit your changes:
+
    ```bash
    git commit -m "Add: description of your changes"
    ```
 
 5. Push to your fork:
+
    ```bash
    git push origin feature/your-feature-name
    ```
@@ -117,4 +121,3 @@ When reporting issues, please include:
 Feel free to open an issue for any questions or concerns.
 
 Thank you for contributing!
-

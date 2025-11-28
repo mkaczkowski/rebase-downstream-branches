@@ -1,6 +1,6 @@
 {
   "name": "rebase-downstream-branches",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Automatically discover and rebase all downstream branches in a stacked PR chain using GitHub CLI",
   "type": "commonjs",
   "main": "bin/rebase-downstream-branches.js",
@@ -12,8 +12,14 @@
   ],
   "scripts": {
     "start": "node bin/rebase-downstream-branches.js",
-    "test": "node bin/rebase-downstream-branches.js --help",
-    "prepublishOnly": "npm run test"
+    "test": "node --test",
+    "test:help": "node bin/rebase-downstream-branches.js --help",
+    "test:version": "node bin/rebase-downstream-branches.js --version",
+    "lint": "eslint bin/**/*.js",
+    "lint:fix": "eslint bin/**/*.js --fix",
+    "format": "prettier --write \"**/*.{js,json,md}\"",
+    "format:check": "prettier --check \"**/*.{js,json,md}\"",
+    "prepublishOnly": "npm run lint && npm test"
   },
   "keywords": [
     "git",
@@ -25,7 +31,10 @@
     "downstream",
     "branches",
     "cli",
-    "automation"
+    "automation",
+    "github-cli",
+    "workflow",
+    "devtools"
   ],
   "author": "mkaczkowski",
   "license": "MIT",
@@ -42,5 +51,9 @@
   "homepage": "https://github.com/mkaczkowski/rebase-downstream-branches#readme",
   "engines": {
     "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.57.0",
+    "prettier": "^3.1.0"
   }
 }
