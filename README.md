@@ -3,7 +3,6 @@
 [![npm version](https://img.shields.io/npm/v/rebase-downstream-branches.svg)](https://www.npmjs.com/package/rebase-downstream-branches)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node.js Version](https://img.shields.io/node/v/rebase-downstream-branches.svg)](https://nodejs.org)
-[![CI Status](https://github.com/mkaczkowski/rebase-downstream-branches/workflows/CI/badge.svg)](https://github.com/mkaczkowski/rebase-downstream-branches/actions)
 
 A CLI tool that automatically discovers and rebases all downstream branches in a stacked PR chain using GitHub CLI.
 
