@@ -7,6 +7,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 ## [1.0.0] - 2025-11-28
 
 ### Added
+
 - Initial open-source release of the `rebase-downstream` CLI.
 - Automatic discovery of downstream PR chains via GitHub CLI.
 - Support for GitHub Enterprise via auto-detected host, `GH_HOST`, or `--host`.
@@ -14,5 +15,5 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 - Project documentation, license, contributing guide, and code of conduct.
 
 ### Fixed
-- Improved resilience when repositories do not have an `origin` remote configured.
 
+- Improved resilience when repositories do not have an `origin` remote configured.
