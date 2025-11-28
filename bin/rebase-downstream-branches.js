@@ -492,9 +492,9 @@ function main() {
   }
 
   // Check for protected branches in the chain
-  const protectedBranchesInChain = chain
-    .map((item) => item.branch)
-    .filter(isProtectedBranch);
+  const protectedBranchesInChain = getBranchesInChain(chain).filter(
+    isProtectedBranch
+  );
 
   if (protectedBranchesInChain.length > 0) {
     log("\n❌ Cannot rebase protected branches:", COLORS.red);
