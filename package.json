@@ -1,6 +1,6 @@
 {
   "name": "rebase-downstream-branches",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "Automatically discover and rebase all downstream branches in a stacked PR chain using GitHub CLI",
   "type": "commonjs",
   "main": "bin/rebase-downstream-branches.js",
