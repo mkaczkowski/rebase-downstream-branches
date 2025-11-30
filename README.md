@@ -75,7 +75,9 @@ rebase-downstream-branches --host github.mycompany.com
 | `--dry-run`         | Preview changes without applying them                  |
 | `--host <hostname>` | GitHub Enterprise hostname (auto-detected from remote) |
 
-## Example
+## Example: Dry Run
+
+Preview a PR chain before making changes:
 
 ```bash
 $ rebase-downstream-branches feature-a --dry-run
@@ -96,6 +98,112 @@ $ rebase-downstream-branches feature-a --dry-run
 
 📝 Dry run - no changes made
 ```
+
+## Example: Real Rebase Session
+
+Here's what happens when rebasing an 8-branch deep stack:
+
+```bash
+$ rebase-downstream-branches feature-base
+
+🔍 Discovering PR chain starting from: feature-base
+   Using GitHub host: github.mycompany.com
+   Found: #101 webpack-plugin → feature-base
+   Found: #102 cpu-utilities → webpack-plugin
+   Found: #103 profiler-fixture → cpu-utilities
+   Found: #104 test-api → profiler-fixture
+   Found: #105 baseline-tests → test-api
+   Found: #106 npm-scripts → baseline-tests
+   Found: #107 pipeline-stage → npm-scripts
+   Found: #108 pr-reporting → pipeline-stage
+
+🔄 PR Chain to rebase:
+────────────────────────────────────────────────────────────
+  1. #101 webpack-plugin
+     └── targets: feature-base
+  2. #102 cpu-utilities
+     └── targets: webpack-plugin
+  3. #103 profiler-fixture
+     └── targets: cpu-utilities
+  4. #104 test-api
+     └── targets: profiler-fixture
+  5. #105 baseline-tests
+     └── targets: test-api
+  6. #106 npm-scripts
+     └── targets: baseline-tests
+  7. #107 pipeline-stage
+     └── targets: npm-scripts
+  8. #108 pr-reporting
+     └── targets: pipeline-stage
+
+⚠️  This will force-push the above branches.
+   Backup refs will be created at refs/backup/<branch>-<timestamp>
+
+❓ Do you want to continue? (y/N): y
+
+🚀 Starting rebase...
+──────────────────────────────────────────────────
+
+📥 Fetching latest from origin...
+
+💾 Creating backup for webpack-plugin...
+   ✅ Backup created: refs/backup/webpack-plugin-2025-11-30T20-29-29-261Z
+
+📦 Rebasing webpack-plugin onto feature-base...
+   Commits to cherry-pick: 973c9e5
+   ✅ Cherry-picked 973c9e5
+   🚀 Force pushing...
+   ✅ Pushed
+
+💾 Creating backup for cpu-utilities...
+   ✅ Backup created: refs/backup/cpu-utilities-2025-11-30T20-29-33-755Z
+
+📦 Rebasing cpu-utilities onto webpack-plugin...
+   Commits to cherry-pick: 973c9e5, 0411e11
+   ⏭️  Skipped 973c9e5 (no changes or already applied)
+   ✅ Cherry-picked 0411e11
+   🚀 Force pushing...
+   ✅ Pushed
+
+💾 Creating backup for profiler-fixture...
+   ✅ Backup created: refs/backup/profiler-fixture-2025-11-30T20-29-38-628Z
+
+📦 Rebasing profiler-fixture onto cpu-utilities...
+   Commits to cherry-pick: 973c9e5, 0411e11, 4359882
+   ⏭️  Skipped 973c9e5 (no changes or already applied)
+   ⏭️  Skipped 0411e11 (no changes or already applied)
+   ✅ Cherry-picked 4359882
+   🚀 Force pushing...
+   ✅ Pushed
+
+[... similar output for remaining 5 branches ...]
+
+──────────────────────────────────────────────────
+✅ Rebased 8/8 branches
+
+💾 Backups created:
+   webpack-plugin: refs/backup/webpack-plugin-2025-11-30T20-29-29-261Z
+   cpu-utilities: refs/backup/cpu-utilities-2025-11-30T20-29-33-755Z
+   profiler-fixture: refs/backup/profiler-fixture-2025-11-30T20-29-38-628Z
+   test-api: refs/backup/test-api-2025-11-30T20-29-43-906Z
+   baseline-tests: refs/backup/baseline-tests-2025-11-30T20-29-49-991Z
+   npm-scripts: refs/backup/npm-scripts-2025-11-30T20-29-56-116Z
+   pipeline-stage: refs/backup/pipeline-stage-2025-11-30T20-30-08-861Z
+   pr-reporting: refs/backup/pr-reporting-2025-11-30T20-30-15-602Z
+
+   To restore a branch:
+   git checkout <branch> && git reset --hard <backup-ref>
+```
+
+### What Just Happened?
+
+1. **Discovery**: Found 8 PRs in a dependency chain using GitHub CLI
+2. **Safety Check**: Created backup refs before any modifications
+3. **Smart Rebasing**: Automatically skipped commits already present in parent branches
+4. **Force Push**: Used `--force-with-lease` for safer force pushes
+5. **Recovery Info**: Provided backup refs for easy rollback if needed
+
+The entire operation took about 46 seconds to rebase 8 branches with full safety guarantees.
 
 ## How It Works
 
