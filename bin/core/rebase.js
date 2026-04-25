@@ -80,8 +80,14 @@ function rebaseBranch(branch, onto) {
 
   const lockedBranches = getWorktreeBranches();
   if (lockedBranches.has(branch)) {
-    // Branch is in use by a worktree — operate in a temp worktree to avoid
-    // disrupting the existing checkout.
+    // Branch is checked out in an existing worktree. Rebase via a temp detached
+    // worktree so that checkout is not disrupted. The existing worktree will
+    // diverge from the updated branch ref — run `git reset --hard origin/<branch>`
+    // there to sync it after this script completes.
+    log(
+      `   ℹ️  Branch is open in a worktree — rebasing without disrupting it`,
+      COLORS.dim
+    );
     const tmpDir = addWorktree(branch);
     try {
       resetHard(onto, tmpDir);
