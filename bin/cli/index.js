@@ -205,10 +205,11 @@ async function main(args, version) {
     process.exit(0);
   }
 
+  const startBranch = determineStartBranch(options);
+
   validateEnvironment();
 
   const host = determineHost(options);
-  const startBranch = determineStartBranch(options);
 
   // Build the chain
   const chain = buildPRChain(startBranch, host);

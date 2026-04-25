@@ -344,6 +344,9 @@ describe("Rebase Logic (real repo)", () => {
     addCommit(tmpDir, "shared.txt", "same content", "add shared on feature");
     addCommit(tmpDir, "unique.txt", "unique", "feat: unique work");
 
+    // Return to main so feature is not the current branch (worktree lock)
+    git(tmpDir, "checkout main");
+
     const { rebaseBranch } = require("../bin/core/rebase");
     const origCwd = process.cwd();
     process.chdir(tmpDir);
@@ -371,6 +374,9 @@ describe("Rebase Logic (real repo)", () => {
       "feature version",
       "feat: add conflict file"
     );
+
+    // Return to main so feature is not the current branch (worktree lock)
+    git(tmpDir, "checkout main");
 
     const { rebaseBranch } = require("../bin/core/rebase");
     const origCwd = process.cwd();
