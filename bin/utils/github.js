@@ -68,6 +68,38 @@ function findPRsTargeting(baseBranch, host) {
 }
 
 /**
+ * Find the open PR for a given head branch and return its base branch.
+ * Returns { number, base, title } or null if no PR exists.
+ */
+function findPRForBranch(headBranch, host) {
+  try {
+    const safeBranch = sanitizeBranchName(headBranch);
+    const env = { ...process.env };
+    if (host) {
+      env.GH_HOST = host;
+    }
+
+    const result = exec(
+      `gh pr list --head "${safeBranch}" --state open --json number,baseRefName,title --limit 1`,
+      { silent: true, env }
+    );
+
+    if (!result) return null;
+
+    const prs = JSON.parse(result);
+    if (prs.length === 0) return null;
+
+    return {
+      number: prs[0].number,
+      base: sanitizeBranchName(prs[0].baseRefName),
+      title: prs[0].title,
+    };
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Check if GitHub CLI is installed
  */
 function isGitHubCLIInstalled() {
@@ -94,6 +126,7 @@ function isGitHubCLIAuthenticated() {
 module.exports = {
   detectGitHubHost,
   findPRsTargeting,
+  findPRForBranch,
   isGitHubCLIInstalled,
   isGitHubCLIAuthenticated,
 };

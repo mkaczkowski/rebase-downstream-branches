@@ -19,19 +19,22 @@ main ← feature-a ← feature-b ← feature-c
 rebase-downstream-branches feature-a
 ```
 
-**Use `rebase-stack`** when you need to rebase the entire stack onto a new base (e.g. main moved forward). You provide the full branch order explicitly. It captures each branch's own commits upfront (before any rebasing starts), so hash changes from earlier rebases don't corrupt downstream cherry-picks.
+**Use `rebase-stack`** when you need to rebase the entire stack onto a new base (e.g. main moved forward). By default it auto-discovers the stack by tracing PRs upward from your current branch to main. It captures each branch's own commits upfront (before any rebasing starts), so hash changes from earlier rebases don't corrupt downstream cherry-picks.
 
 ```bash
-# main has new commits, rebase the entire stack
+# main has new commits, auto-discover and rebase the entire stack
+rebase-stack
+
+# or provide branches explicitly (no gh CLI needed)
 rebase-stack main feature-a feature-b feature-c
 ```
 
 | | `rebase-downstream-branches` | `rebase-stack` |
 |---|---|---|
-| Branch discovery | Automatic via `gh pr list` | Explicit ordered arguments |
-| Requires GitHub CLI | Yes | No |
+| Direction | Discovers downward from a branch | Traces upward from current branch to base |
+| Requires GitHub CLI | Yes | Auto-discovery: yes. Explicit mode: no |
 | Commit capture | At rebase time | Upfront (before any rebasing) |
-| Rebases starting branch | No (only downstream) | Yes (all listed branches) |
+| Rebases starting branch | No (only downstream) | Yes (all branches in the stack) |
 | Best for | One branch updated, propagate down | Entire stack onto new base |
 
 ## Installation
@@ -173,7 +176,13 @@ Also respects the `GH_HOST` environment variable.
 
 ## rebase-stack
 
-Rebases an explicit ordered list of branches onto a base. Captures each branch's own commits before any rebasing starts, so downstream branches aren't affected by hash changes from earlier rebases.
+Rebases an entire stacked PR chain onto its base. By default, auto-discovers the stack by tracing PRs upward from the current branch to a protected base (main, master, etc.). Captures each branch's own commits before any rebasing starts, so downstream branches aren't affected by hash changes from earlier rebases.
+
+### Two modes
+
+**Auto-discovery (default):** Traces PRs upward from the current branch. Each branch must have an open PR. The walk stops when it reaches a protected branch (main, master, develop, etc.), which becomes the rebase base. Requires GitHub CLI.
+
+**Explicit mode:** When 2+ positional arguments are given, treats them as `<base> <branch-1> <branch-2> ...`. No GitHub CLI needed.
 
 ### Why upfront commit capture matters
 
@@ -184,29 +193,44 @@ When rebasing a full stack, each branch is rebased sequentially. After branch A 
 ### Usage
 
 ```bash
-# Rebase a full stack onto main
+# Auto-discover stack from current branch and rebase
+rebase-stack
+
+# Auto-discover stack from a specific branch
+rebase-stack feature-c
+
+# Explicit: provide full branch order (no gh CLI needed)
 rebase-stack main feature-a feature-b feature-c
 
 # Preview what would be rebased
-rebase-stack main feature-a feature-b feature-c --dry-run
+rebase-stack --dry-run
 
 # Skip confirmation
-rebase-stack main feature-a feature-b feature-c --yes
+rebase-stack --yes
+
+# GitHub Enterprise
+rebase-stack --host github.mycompany.com
 ```
 
 ### Options
 
-| Option         | Description                           |
-| -------------- | ------------------------------------- |
-| `-h, --help`   | Show help message                     |
-| `-v, --version`| Show version number                   |
-| `--dry-run`    | Preview changes without applying them |
-| `-y, --yes`    | Skip confirmation prompt              |
+| Option              | Description                                            |
+| ------------------- | ------------------------------------------------------ |
+| `-h, --help`        | Show help message                                      |
+| `-v, --version`     | Show version number                                    |
+| `--dry-run`         | Preview changes without applying them                  |
+| `-y, --yes`         | Skip confirmation prompt                               |
+| `--host <hostname>` | GitHub Enterprise hostname (auto-detected from remote) |
 
-### Example: Dry Run
+### Example: Auto-Discovery
 
 ```bash
-$ rebase-stack main feature-a feature-b feature-c --dry-run
+$ rebase-stack --dry-run
+
+🔍 Discovering stack from feature-c...
+   #104 feature-c → feature-b
+   #103 feature-b → feature-a
+   #102 feature-a → main
 
 🔍 Capturing own commits for 3 branches...
 
@@ -221,18 +245,6 @@ $ rebase-stack main feature-a feature-b feature-c --dry-run
      └── onto: feature-b
 
 📝 Dry run - no changes made
-
-  feature-a:
-    a1b2c3d
-    e4f5g6h
-    ...
-  feature-b:
-    i7j8k9l
-    m0n1o2p
-  feature-c:
-    q3r4s5t
-    u6v7w8x
-    y9z0a1b
 ```
 
 ### Example: Real Rebase Session

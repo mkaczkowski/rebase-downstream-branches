@@ -1,14 +1,18 @@
 /**
  * CLI orchestrator for rebase-stack.
  *
- * Rebases an explicit ordered branch stack. Captures each branch's own commits
- * before any rebasing starts so that hash changes from earlier rebases don't
- * pollute downstream cherry-picks.
+ * Default mode: auto-discovers the PR stack by tracing upward from the
+ * current (or specified) branch to a protected base (e.g. main), then
+ * rebases the entire stack.
+ *
+ * Explicit mode: when 2+ positional arguments are given, treats them as
+ * <base> <branch-1> <branch-2> ... and rebases in that order.
  */
 
 const { log, COLORS } = require("../utils/colors");
 const {
   getCurrentBranch,
+  getRemoteUrl,
   fetchFromOrigin,
   checkoutBranch,
   isGitRepository,
@@ -16,6 +20,12 @@ const {
   branchExists,
   hasCleanWorkingTree,
 } = require("../utils/git");
+const {
+  detectGitHubHost,
+  findPRForBranch,
+  isGitHubCLIInstalled,
+  isGitHubCLIAuthenticated,
+} = require("../utils/github");
 const { sanitizeBranchName, isProtectedBranch } = require("../utils/validation");
 const { promptConfirmation, displayBackups, displayRestoreInstructions } = require("../utils/ui");
 const { createBackup } = require("../utils/backup");
@@ -28,6 +38,7 @@ function parseArgs(args) {
     help: false,
     version: false,
     skipConfirmation: false,
+    host: null,
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -41,6 +52,8 @@ function parseArgs(args) {
       options.dryRun = true;
     } else if (arg === "--yes" || arg === "-y") {
       options.skipConfirmation = true;
+    } else if (arg === "--host" && args[i + 1]) {
+      options.host = args[++i];
     } else if (!arg.startsWith("-")) {
       options.branches.push(arg);
     }
@@ -52,32 +65,78 @@ function parseArgs(args) {
 function showHelp() {
   log("\n📋 Rebase Stack", COLORS.bright);
   log("─".repeat(50));
-  log("\nRebases an explicit ordered list of branches.", COLORS.dim);
+  log("\nRebases an entire stacked PR chain onto its base.", COLORS.dim);
   log("Captures own commits upfront to avoid hash drift.", COLORS.dim);
   log("\nUsage:", COLORS.cyan);
-  log("  rebase-stack <base> <branch-1> <branch-2> [...]");
-  log("\nArguments:", COLORS.cyan);
-  log("  <base>        The base branch to rebase onto (e.g. main)");
-  log("  <branch-N>    Branches in stack order (parent to child)");
+  log("  rebase-stack                                     # Auto-discover from current branch");
+  log("  rebase-stack <branch>                            # Auto-discover from specific branch");
+  log("  rebase-stack <base> <branch-1> <branch-2> [...]  # Explicit branch order");
+  log("\nAuto-discovery (default):", COLORS.cyan);
+  log("  Traces PRs upward from the target branch to a protected base");
+  log("  (main, master, develop, etc.), then rebases the entire stack.");
+  log("  Requires GitHub CLI (gh) installed and authenticated.");
+  log("\nExplicit mode:", COLORS.cyan);
+  log("  When 2+ positional arguments are given, treats them as an ordered");
+  log("  list: <base> <branch-1> <branch-2> ... No GitHub CLI needed.");
   log("\nOptions:", COLORS.cyan);
   log("  -h, --help       Show this help message");
   log("  -v, --version    Show version number");
   log("  --dry-run        Preview changes without applying them");
   log("  -y, --yes        Skip confirmation prompt");
+  log("  --host <host>    GitHub Enterprise hostname (auto-detected from remote)");
   log("\nExamples:", COLORS.cyan);
-  log("  # Rebase a 3-branch stack onto main");
+  log("  # Auto-discover and rebase stack ending at current branch");
+  log("  rebase-stack");
+  log("\n  # Auto-discover stack ending at a specific branch");
+  log("  rebase-stack feature-c");
+  log("\n  # Explicit: rebase a 3-branch stack onto main");
   log("  rebase-stack main feature-a feature-b feature-c");
   log("\n  # Preview what would be rebased");
-  log("  rebase-stack main feature-a feature-b --dry-run");
-  log("\n  # Skip confirmation (for scripting)");
-  log("  rebase-stack main feature-a feature-b --yes");
-  log("\nHow it works:", COLORS.cyan);
-  log("  1. Captures each branch's own commits before any rebasing");
-  log("  2. Creates backup refs for safety");
-  log("  3. Rebases each branch onto its parent using cherry-pick");
-  log("  4. Handles worktree-locked branches via temp worktrees");
-  log("  5. Force pushes with --force-with-lease");
+  log("  rebase-stack --dry-run");
+  log("\n  # GitHub Enterprise");
+  log("  rebase-stack --host github.mycompany.com");
   log("");
+}
+
+/**
+ * Discover the stack by tracing PRs upward from the given branch.
+ * Returns { base, branches } where branches is ordered parent-to-child.
+ */
+function discoverStack(startBranch, host) {
+  log(`\n🔍 Discovering stack from ${startBranch}...`, COLORS.cyan);
+  if (host) {
+    log(`   Using GitHub host: ${host}`, COLORS.dim);
+  }
+
+  const stack = [];
+  let current = startBranch;
+  const visited = new Set();
+
+  while (true) {
+    if (visited.has(current)) {
+      log(`\n❌ Circular reference detected at ${current}`, COLORS.red);
+      process.exit(1);
+    }
+    visited.add(current);
+
+    const pr = findPRForBranch(current, host);
+    if (!pr) {
+      log(`\n❌ No open PR found for branch "${current}".`, COLORS.red);
+      log("   All branches in the stack must have open PRs.", COLORS.dim);
+      log("   Or use explicit mode: rebase-stack <base> <branch-1> ...", COLORS.dim);
+      process.exit(1);
+    }
+
+    log(`   #${pr.number} ${current} → ${pr.base}`, COLORS.dim);
+    stack.unshift(current);
+
+    if (isProtectedBranch(pr.base)) {
+      // Reached the root base
+      return { base: pr.base, branches: stack };
+    }
+
+    current = pr.base;
+  }
 }
 
 function displayStack(base, stack) {
@@ -92,7 +151,6 @@ function displayStack(base, stack) {
 
 /**
  * Capture each branch's own commits before any rebasing.
- * Returns array of { branch, onto, commits } in stack order.
  */
 function captureOwnCommits(base, branches) {
   const stack = [];
@@ -101,7 +159,6 @@ function captureOwnCommits(base, branches) {
     const branch = branches[i];
     const parent = i === 0 ? base : branches[i - 1];
 
-    // getBranchOwnCommits returns newest-first; reverse for cherry-pick order
     const commits = getBranchOwnCommits(branch, parent);
     commits.reverse();
 
@@ -111,7 +168,7 @@ function captureOwnCommits(base, branches) {
   return stack;
 }
 
-async function executeRebase(base, stack, options) {
+async function executeRebase(stack, options) {
   if (!options.skipConfirmation) {
     const confirmed = await promptConfirmation("\n❓ Do you want to continue?");
     if (!confirmed) {
@@ -168,6 +225,21 @@ async function executeRebase(base, stack, options) {
   }
 }
 
+function validateGitHubCLI() {
+  if (!isGitHubCLIInstalled()) {
+    log("❌ GitHub CLI (gh) is required for auto-discovery.", COLORS.red);
+    log("   Install: https://cli.github.com/", COLORS.dim);
+    log("   Or use explicit mode: rebase-stack <base> <branch-1> ...", COLORS.dim);
+    process.exit(1);
+  }
+
+  if (!isGitHubCLIAuthenticated()) {
+    log("❌ GitHub CLI is not authenticated.", COLORS.red);
+    log("   Run: gh auth login", COLORS.dim);
+    process.exit(1);
+  }
+}
+
 async function main(args, version) {
   const options = parseArgs(args);
 
@@ -181,19 +253,42 @@ async function main(args, version) {
     process.exit(0);
   }
 
-  if (options.branches.length < 2) {
-    log("❌ At least 2 arguments required: <base> <branch-1> [branch-2 ...]", COLORS.red);
-    log("   Run with --help for usage.", COLORS.dim);
-    process.exit(1);
-  }
-
   if (!isGitRepository()) {
     log("❌ Not a git repository.", COLORS.red);
     process.exit(1);
   }
 
-  const base = sanitizeBranchName(options.branches[0]);
-  const branches = options.branches.slice(1).map(sanitizeBranchName);
+  let base;
+  let branches;
+
+  if (options.branches.length >= 2) {
+    // Explicit mode: <base> <branch-1> <branch-2> ...
+    base = sanitizeBranchName(options.branches[0]);
+    branches = options.branches.slice(1).map(sanitizeBranchName);
+  } else {
+    // Auto-discovery mode
+    validateGitHubCLI();
+
+    const host = options.host || process.env.GH_HOST || detectGitHubHost(getRemoteUrl());
+    const startBranch = options.branches.length === 1
+      ? sanitizeBranchName(options.branches[0])
+      : getCurrentBranch();
+
+    if (!startBranch) {
+      log("❌ Could not determine current branch.", COLORS.red);
+      process.exit(1);
+    }
+
+    if (isProtectedBranch(startBranch)) {
+      log(`\n❌ Cannot start from protected branch "${startBranch}".`, COLORS.red);
+      log("   Specify a feature branch or use explicit mode.", COLORS.dim);
+      process.exit(1);
+    }
+
+    const discovered = discoverStack(startBranch, host);
+    base = discovered.base;
+    branches = discovered.branches;
+  }
 
   // Validate no protected branches in the rebase targets
   const protectedInStack = branches.filter(isProtectedBranch);
@@ -244,7 +339,7 @@ async function main(args, version) {
   log("\n⚠️  This will force-push the above branches.", COLORS.yellow);
   log("   Backup refs will be created at refs/backup/<branch>-<timestamp>", COLORS.dim);
 
-  await executeRebase(base, stack, options);
+  await executeRebase(stack, options);
 }
 
 module.exports = { main };

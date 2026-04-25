@@ -46,26 +46,34 @@ describe("rebase-stack CLI Tests", () => {
     assert.match(result.output, /rebase-stack v\d+\.\d+\.\d+/);
   });
 
-  test("should fail when fewer than 2 arguments provided", () => {
+  test("should mention auto-discovery and explicit mode in help", () => {
+    const result = runCLI(["--help"]);
+    assert.strictEqual(result.success, true);
+    assert.match(result.output, /Auto-discovery/);
+    assert.match(result.output, /Explicit mode/);
+    assert.match(result.output, /--host/);
+  });
+
+  test("with no args attempts auto-discovery (needs gh CLI)", () => {
     const result = runCLI([]);
-    assert.strictEqual(result.success, false);
-    assert.match(
-      result.output + result.error,
+    // Should attempt discovery, not fail with "2 arguments required"
+    assert.doesNotMatch(
+      result.output + (result.error || ""),
       /At least 2 arguments required/
     );
   });
 
-  test("should fail with only 1 branch argument", () => {
-    const result = runCLI(["main"]);
-    assert.strictEqual(result.success, false);
-    assert.match(
-      result.output + result.error,
+  test("with 1 arg attempts auto-discovery for that branch", () => {
+    const result = runCLI(["some-feature-branch"]);
+    // Should attempt discovery, not fail with "2 arguments required"
+    assert.doesNotMatch(
+      result.output + (result.error || ""),
       /At least 2 arguments required/
     );
   });
 });
 
-describe("rebase-stack Argument Parsing", () => {
+describe("rebase-stack Explicit Mode", () => {
   test("should accept --dry-run flag", () => {
     const result = runCLI(["main", "feature-a", "--dry-run"]);
     if (result.success) {
@@ -83,6 +91,14 @@ describe("rebase-stack Argument Parsing", () => {
 
   test("should accept -y flag", () => {
     const result = runCLI(["main", "feature-a", "-y", "--dry-run"]);
+    assert.doesNotMatch(
+      result.output + (result.error || ""),
+      /Unknown flag/
+    );
+  });
+
+  test("should accept --host flag", () => {
+    const result = runCLI(["main", "feature-a", "--host", "ghe.corp.com", "--dry-run"]);
     assert.doesNotMatch(
       result.output + (result.error || ""),
       /Unknown flag/
@@ -127,12 +143,21 @@ describe("rebase-stack Security Features", () => {
     );
   });
 
-  test("should reject non-existent branches", () => {
+  test("should reject non-existent branches in explicit mode", () => {
     const result = runCLI(["main", "this-branch-does-not-exist-xyz", "--dry-run"]);
     assert.strictEqual(result.success, false);
     assert.match(
       result.output + result.error,
       /Branches not found locally/
+    );
+  });
+
+  test("should reject protected branch as start in auto-discovery", () => {
+    const result = runCLI(["main"]);
+    assert.strictEqual(result.success, false);
+    assert.match(
+      result.output + result.error,
+      /Cannot start from protected branch/
     );
   });
 });
