@@ -51,19 +51,23 @@ node bin/rebase-downstream-branches.js --yes
 
 ## Code Architecture
 
-### Entry Point
+### Entry Points
 
-- `bin/rebase-downstream-branches.js` - CLI entry point that loads version and calls main()
+- `bin/rebase-downstream-branches.js` - CLI entry point for PR-chain discovery mode
+- `bin/rebase-stack.js` - CLI entry point for explicit branch list mode
 
 ### Core Modules
 
 **bin/cli/**
-- `index.js` - Main CLI orchestration and workflow logic
-- `args-parser.js` - Command-line argument parsing
+- `index.js` - Main CLI orchestration for rebase-downstream-branches
+- `args-parser.js` - Argument parsing for rebase-downstream-branches
+- `rebase-stack-cli.js` - CLI orchestration for rebase-stack (arg parsing, commit capture, execution)
 
 **bin/core/**
+- `cherry-pick.js` - Shared cherry-pick logic (used by both rebase.js and rebase-stack.js)
 - `chain-builder.js` - PR chain discovery using `gh pr list --base <branch>`
-- `rebase.js` - Core rebase logic using reset + cherry-pick approach
+- `rebase.js` - Core rebase logic using reset + cherry-pick (computes commits at rebase time)
+- `rebase-stack.js` - Core rebase logic using pre-captured commits (for full-stack rebasing)
 
 **bin/utils/**
 - `git.js` - Git command wrappers (uses `execSync`)
@@ -85,6 +89,14 @@ The tool does NOT use `git rebase` directly. Instead:
 5. Force push with `--force-with-lease`
 
 This approach provides better control over conflicts and allows skipping empty commits.
+
+**Upfront Commit Capture (rebase-stack only)**
+
+`rebase-stack` captures each branch's own commits via `git log parent..branch` before any
+rebasing starts. This is critical because once the first branch is rebased, its commit hashes
+change, which would cause `git log` to return stale parent commits for downstream branches.
+The `rebase-downstream-branches` tool computes commits at rebase time, which works when only
+downstream branches are being rebased (the starting branch stays unchanged).
 
 **Chain Discovery**
 

@@ -156,6 +156,26 @@ function updateBranchToWorktreeHead(branch, worktreePath) {
   exec(`git update-ref "refs/heads/${branch}" "${newHead}"`, { silent: true });
 }
 
+/**
+ * Check if a branch exists locally.
+ */
+function branchExists(branch) {
+  try {
+    exec(`git rev-parse --verify refs/heads/${branch}`, { silent: true });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Check if the working tree is clean (no uncommitted changes).
+ */
+function hasCleanWorkingTree() {
+  const status = exec("git status --porcelain", { silent: true }) || "";
+  return status.trim() === "";
+}
+
 module.exports = {
   exec,
   getCurrentBranch,
@@ -175,4 +195,6 @@ module.exports = {
   addWorktree,
   removeWorktree,
   updateBranchToWorktreeHead,
+  branchExists,
+  hasCleanWorkingTree,
 };
