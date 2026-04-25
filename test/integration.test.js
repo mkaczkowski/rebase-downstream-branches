@@ -501,6 +501,81 @@ describe("Rebase Logic (real repo)", () => {
   });
 });
 
+// ─── Git Utility Additions ──────────────────────────────────────────
+
+describe("branchExists (real repo)", () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    initRepo(tmpDir);
+  });
+
+  afterEach(() => {
+    removeTempDir(tmpDir);
+  });
+
+  test("returns true for existing branch", () => {
+    git(tmpDir, "checkout -b feature");
+    const { branchExists } = require("../bin/utils/git");
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      assert.strictEqual(branchExists("feature"), true);
+      assert.strictEqual(branchExists("main"), true);
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+
+  test("returns false for non-existent branch", () => {
+    const { branchExists } = require("../bin/utils/git");
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      assert.strictEqual(branchExists("does-not-exist"), false);
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+});
+
+describe("hasCleanWorkingTree (real repo)", () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    initRepo(tmpDir);
+  });
+
+  afterEach(() => {
+    removeTempDir(tmpDir);
+  });
+
+  test("returns true for clean repo", () => {
+    const { hasCleanWorkingTree } = require("../bin/utils/git");
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      assert.strictEqual(hasCleanWorkingTree(), true);
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+
+  test("returns false when working tree has changes", () => {
+    fs.writeFileSync(path.join(tmpDir, "dirty.txt"), "uncommitted");
+    const { hasCleanWorkingTree } = require("../bin/utils/git");
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      assert.strictEqual(hasCleanWorkingTree(), false);
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+});
+
 // ─── rebase-stack Integration Tests ─────────────────────────────────
 
 describe("rebaseFromCommits (real repo)", () => {

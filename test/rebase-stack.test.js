@@ -126,4 +126,13 @@ describe("rebase-stack Security Features", () => {
       /Cannot rebase protected branches/
     );
   });
+
+  test("should reject non-existent branches", () => {
+    const result = runCLI(["main", "this-branch-does-not-exist-xyz", "--dry-run"]);
+    assert.strictEqual(result.success, false);
+    assert.match(
+      result.output + result.error,
+      /Branches not found locally/
+    );
+  });
 });

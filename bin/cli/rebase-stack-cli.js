@@ -13,6 +13,8 @@ const {
   checkoutBranch,
   isGitRepository,
   getBranchOwnCommits,
+  branchExists,
+  hasCleanWorkingTree,
 } = require("../utils/git");
 const { sanitizeBranchName, isProtectedBranch } = require("../utils/validation");
 const { promptConfirmation, displayBackups, displayRestoreInstructions } = require("../utils/ui");
@@ -198,6 +200,23 @@ async function main(args, version) {
   if (protectedInStack.length > 0) {
     log("\n❌ Cannot rebase protected branches:", COLORS.red);
     protectedInStack.forEach((b) => log(`   • ${b}`, COLORS.red));
+    process.exit(1);
+  }
+
+  // Verify all branches exist locally
+  const allBranches = [base, ...branches];
+  const missing = allBranches.filter((b) => !branchExists(b));
+  if (missing.length > 0) {
+    log("\n❌ Branches not found locally:", COLORS.red);
+    missing.forEach((b) => log(`   • ${b}`, COLORS.red));
+    log("   Fetch from origin first: git fetch origin", COLORS.dim);
+    process.exit(1);
+  }
+
+  // Check for dirty working tree
+  if (!hasCleanWorkingTree()) {
+    log("\n❌ Working tree has uncommitted changes.", COLORS.red);
+    log("   Commit or stash them before rebasing.", COLORS.dim);
     process.exit(1);
   }
 

@@ -64,6 +64,7 @@ node bin/rebase-downstream-branches.js --yes
 - `rebase-stack-cli.js` - CLI orchestration for rebase-stack (arg parsing, commit capture, execution)
 
 **bin/core/**
+- `cherry-pick.js` - Shared cherry-pick logic (used by both rebase.js and rebase-stack.js)
 - `chain-builder.js` - PR chain discovery using `gh pr list --base <branch>`
 - `rebase.js` - Core rebase logic using reset + cherry-pick (computes commits at rebase time)
 - `rebase-stack.js` - Core rebase logic using pre-captured commits (for full-stack rebasing)
