@@ -109,6 +109,53 @@ function isGitRepository() {
   }
 }
 
+/**
+ * Returns the set of branch names currently checked out in a worktree (excluding HEAD).
+ */
+function getWorktreeBranches() {
+  try {
+    const output = exec("git worktree list --porcelain", { silent: true }) || "";
+    const branches = new Set();
+    for (const line of output.split("\n")) {
+      const match = line.match(/^branch refs\/heads\/(.+)$/);
+      if (match) branches.add(match[1]);
+    }
+    return branches;
+  } catch {
+    return new Set();
+  }
+}
+
+/**
+ * Creates a temporary worktree for a branch and returns its path.
+ * The caller is responsible for removing it via removeWorktree().
+ */
+function addWorktree(branch) {
+  const tmpDir = require("os").tmpdir() + "/rebase-downstream-" + branch.replace(/\//g, "-") + "-" + Date.now();
+  exec(`git worktree add "${tmpDir}" "${branch}"`, { silent: true });
+  return tmpDir;
+}
+
+function removeWorktree(worktreePath) {
+  exec(`git worktree remove "${worktreePath}" --force`, { silent: true, ignoreError: true });
+}
+
+function resetHardInDir(target, cwd) {
+  return exec(`git reset --hard "${target}"`, { silent: true, cwd });
+}
+
+function cherryPickInDir(commitHash, cwd) {
+  return exec(`git cherry-pick "${commitHash}"`, { silent: true, cwd });
+}
+
+function cherryPickSkipInDir(cwd) {
+  return exec("git cherry-pick --skip", { silent: true, ignoreError: true, cwd });
+}
+
+function getStatusInDir(cwd) {
+  return exec("git status --porcelain", { silent: true, cwd }) || "";
+}
+
 module.exports = {
   exec,
   getCurrentBranch,
@@ -124,4 +171,11 @@ module.exports = {
   hasConflict,
   pushBranch,
   isGitRepository,
+  getWorktreeBranches,
+  addWorktree,
+  removeWorktree,
+  resetHardInDir,
+  cherryPickInDir,
+  cherryPickSkipInDir,
+  getStatusInDir,
 };

@@ -11,6 +11,13 @@ const {
   getStatus,
   hasConflict,
   pushBranch,
+  getWorktreeBranches,
+  addWorktree,
+  removeWorktree,
+  resetHardInDir,
+  cherryPickInDir,
+  cherryPickSkipInDir,
+  getStatusInDir,
 } = require("../utils/git");
 const { log, COLORS } = require("../utils/colors");
 
@@ -33,7 +40,14 @@ function rebaseBranch(branch, onto) {
 
   log(`   Commits to cherry-pick: ${commitHashes.join(", ")}`, COLORS.dim);
 
-  // Checkout and reset
+  // If the branch is locked by a worktree, operate in a temporary worktree
+  // instead of checking out locally — preserving the existing worktree.
+  const lockedBranches = getWorktreeBranches();
+  if (lockedBranches.has(branch)) {
+    return rebaseBranchViaWorktree(branch, onto, commitHashes);
+  }
+
+  // Normal path: checkout and reset
   checkoutBranch(branch);
   resetHard(onto);
 
@@ -71,6 +85,53 @@ function rebaseBranch(branch, onto) {
         );
       }
     }
+  }
+
+  return true;
+}
+
+/**
+ * Rebase via a temporary worktree when the branch is locked by an existing worktree.
+ */
+function rebaseBranchViaWorktree(branch, onto, commitHashes) {
+  const tmpDir = addWorktree(branch);
+  try {
+    resetHardInDir(onto, tmpDir);
+
+    for (const commitHash of commitHashes) {
+      try {
+        cherryPickInDir(commitHash, tmpDir);
+        log(`   ✅ Cherry-picked ${commitHash}`, COLORS.green);
+      } catch (error) {
+        const status = getStatusInDir(tmpDir);
+        if (hasConflict(status)) {
+          const conflictError = new Error(
+            `Conflict detected while cherry-picking ${commitHash} onto ${onto}.\n` +
+              "   Resolve manually:\n" +
+              "      1. Fix conflicts in the files\n" +
+              "      2. git add <files>\n" +
+              "      3. git cherry-pick --continue\n" +
+              "      4. Re-run this script"
+          );
+          conflictError.isConflict = true;
+          throw conflictError;
+        }
+        const skipStatus = getStatusInDir(tmpDir);
+        if (skipStatus.trim() === "" || !skipStatus.includes("U")) {
+          cherryPickSkipInDir(tmpDir);
+          log(
+            `   ⏭️  Skipped ${commitHash} (no changes or already applied)`,
+            COLORS.yellow
+          );
+        } else {
+          throw new Error(
+            `Cherry-pick of ${commitHash} failed unexpectedly: ${error.message}`
+          );
+        }
+      }
+    }
+  } finally {
+    removeWorktree(tmpDir);
   }
 
   return true;
