@@ -28,10 +28,10 @@ function rebaseBranch(branch, onto) {
     return true;
   }
 
-  log(
-    `   Commits to cherry-pick: ${commitHashes.reverse().join(", ")}`,
-    COLORS.dim
-  );
+  // Reverse to oldest-first order for cherry-picking
+  commitHashes.reverse();
+
+  log(`   Commits to cherry-pick: ${commitHashes.join(", ")}`, COLORS.dim);
 
   // Checkout and reset
   checkoutBranch(branch);
@@ -46,19 +46,30 @@ function rebaseBranch(branch, onto) {
       // Check if there's a conflict
       const status = getStatus();
       if (hasConflict(status)) {
-        log("   ⚠️  Conflict detected! Resolve manually:", COLORS.yellow);
-        log("      1. Fix conflicts in the files", COLORS.dim);
-        log("      2. git add <files>", COLORS.dim);
-        log("      3. git cherry-pick --continue", COLORS.dim);
-        log("      4. Re-run this script", COLORS.dim);
-        process.exit(1);
+        const conflictError = new Error(
+          `Conflict detected while cherry-picking ${commitHash} onto ${onto}.\n` +
+            "   Resolve manually:\n" +
+            "      1. Fix conflicts in the files\n" +
+            "      2. git add <files>\n" +
+            "      3. git cherry-pick --continue\n" +
+            "      4. Re-run this script"
+        );
+        conflictError.isConflict = true;
+        throw conflictError;
       }
-      // If empty commit, skip
-      cherryPickSkip();
-      log(
-        `   ⏭️  Skipped ${commitHash} (no changes or already applied)`,
-        COLORS.yellow
-      );
+      // Check if cherry-pick is actually in progress (empty commit case)
+      const skipStatus = getStatus();
+      if (skipStatus.trim() === "" || !skipStatus.includes("U")) {
+        cherryPickSkip();
+        log(
+          `   ⏭️  Skipped ${commitHash} (no changes or already applied)`,
+          COLORS.yellow
+        );
+      } else {
+        throw new Error(
+          `Cherry-pick of ${commitHash} failed unexpectedly: ${error.message}`
+        );
+      }
     }
   }
 

@@ -63,32 +63,49 @@ describe("CLI Tests", () => {
 describe("Argument Parsing", () => {
   test("should accept branch name as argument", () => {
     const result = runCLI(["feature-branch", "--dry-run"]);
-    // Should not crash - either works or fails gracefully
-    assert.ok(result.success || result.error);
+    // Should not report invalid branch name
+    assert.doesNotMatch(
+      result.output + (result.error || ""),
+      /Invalid branch name/
+    );
   });
 
   test("should accept --dry-run flag", () => {
     const result = runCLI(["--dry-run"]);
-    // Should not crash
-    assert.ok(result.success || result.error);
+    if (result.success) {
+      assert.match(
+        result.output,
+        /Dry run|No downstream PRs found|Discovering PR chain/
+      );
+    } else {
+      // Should fail for environment reasons, not argument parsing
+      assert.doesNotMatch(result.output + (result.error || ""), /Unknown flag/);
+    }
   });
 
   test("should accept --host flag with value", () => {
     const result = runCLI(["--host", "github.example.com", "--dry-run"]);
-    // Should not crash
-    assert.ok(result.success || result.error);
+    // Should not report unknown flag
+    assert.doesNotMatch(
+      result.output + (result.error || ""),
+      /Unknown flag|Invalid/
+    );
   });
 
   test("should accept --yes flag", () => {
     const result = runCLI(["--yes", "--dry-run"]);
-    // Should not crash
-    assert.ok(result.success || result.error);
+    assert.doesNotMatch(
+      result.output + (result.error || ""),
+      /Unknown flag|Invalid/
+    );
   });
 
   test("should accept -y flag", () => {
     const result = runCLI(["-y", "--dry-run"]);
-    // Should not crash
-    assert.ok(result.success || result.error);
+    assert.doesNotMatch(
+      result.output + (result.error || ""),
+      /Unknown flag|Invalid/
+    );
   });
 });
 
@@ -105,9 +122,12 @@ describe("Security Features", () => {
 
   test("should reject branch names starting with dash", () => {
     const result = runCLI(["--malicious-branch", "--dry-run"]);
-    // This should be treated as a flag, not a branch name
-    // or rejected if somehow parsed as branch
-    assert.ok(result.success || result.error);
+    // --malicious-branch is parsed as an unknown flag, not as a branch name.
+    // The CLI should not crash and should not treat it as a valid branch.
+    assert.doesNotMatch(
+      result.output + (result.error || ""),
+      /Rebasing.*malicious-branch/
+    );
   });
 
   test("should reject branch names with double dots", () => {
