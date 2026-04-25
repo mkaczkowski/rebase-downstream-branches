@@ -46,15 +46,12 @@ describe("CLI Tests", () => {
     assert.match(result.output, /rebase-downstream-branches v\d+\.\d+\.\d+/);
   });
 
-  test("should fail gracefully when gh is not installed", () => {
-    // This test will pass if gh is installed, but we're mainly checking
-    // that the CLI doesn't crash unexpectedly
+  test("should fail gracefully when gh is not installed or not authenticated", () => {
     const result = runCLI([]);
-    // Either succeeds with gh installed, or fails with proper error message
     if (!result.success) {
       assert.match(
         result.output + result.error,
-        /GitHub CLI \(gh\) is required|No downstream PRs found/
+        /GitHub CLI \(gh\) is required|not authenticated|No downstream PRs found/
       );
     }
   });
