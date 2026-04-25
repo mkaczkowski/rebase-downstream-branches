@@ -85,7 +85,7 @@ function rebaseBranch(branch, onto) {
     // diverge from the updated branch ref — run `git reset --hard origin/<branch>`
     // there to sync it after this script completes.
     log(
-      `   ℹ️  Branch is open in a worktree — rebasing without disrupting it`,
+      "   ℹ️  Branch is open in a worktree - rebasing without disrupting it",
       COLORS.dim
     );
     const tmpDir = addWorktree(branch);
