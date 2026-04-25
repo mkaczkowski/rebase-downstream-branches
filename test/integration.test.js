@@ -501,6 +501,251 @@ describe("Rebase Logic (real repo)", () => {
   });
 });
 
+// ─── rebase-stack Integration Tests ─────────────────────────────────
+
+describe("rebaseFromCommits (real repo)", () => {
+  let tmpDir;
+
+  beforeEach(() => {
+    tmpDir = createTempDir();
+    initRepo(tmpDir);
+  });
+
+  afterEach(() => {
+    removeTempDir(tmpDir);
+  });
+
+  test("rebases branch using pre-captured commit hashes", () => {
+    addCommit(tmpDir, "base.txt", "base", "base commit on main");
+
+    git(tmpDir, "checkout -b feature");
+    addCommit(tmpDir, "feat1.txt", "feat1", "feat: first");
+    addCommit(tmpDir, "feat2.txt", "feat2", "feat: second");
+
+    git(tmpDir, "checkout main");
+    addCommit(tmpDir, "main-new.txt", "new", "main: new work");
+
+    const { getBranchOwnCommits } = require("../bin/utils/git");
+    const { rebaseFromCommits } = require("../bin/core/rebase-stack");
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      // Capture commits upfront (oldest-first after reverse)
+      const commits = getBranchOwnCommits("feature", "main");
+      commits.reverse();
+
+      rebaseFromCommits("feature", "main", commits);
+
+      const featureLog = git(tmpDir, "log feature --oneline");
+      assert.match(featureLog, /feat: first/);
+      assert.match(featureLog, /feat: second/);
+      assert.match(featureLog, /main: new work/);
+
+      assert.ok(fs.existsSync(path.join(tmpDir, "main-new.txt")));
+      assert.ok(fs.existsSync(path.join(tmpDir, "feat1.txt")));
+      assert.ok(fs.existsSync(path.join(tmpDir, "feat2.txt")));
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+
+  test("skips empty commits gracefully", () => {
+    addCommit(tmpDir, "shared.txt", "same content", "add shared on main");
+
+    git(tmpDir, "checkout -b feature HEAD~1");
+    addCommit(tmpDir, "shared.txt", "same content", "add shared on feature");
+    addCommit(tmpDir, "unique.txt", "unique", "feat: unique work");
+
+    git(tmpDir, "checkout main");
+
+    const { getBranchOwnCommits } = require("../bin/utils/git");
+    const { rebaseFromCommits } = require("../bin/core/rebase-stack");
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      const commits = getBranchOwnCommits("feature", "main");
+      commits.reverse();
+
+      rebaseFromCommits("feature", "main", commits);
+
+      assert.ok(fs.existsSync(path.join(tmpDir, "unique.txt")));
+      assert.strictEqual(readFile(tmpDir, "shared.txt"), "same content");
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+
+  test("throws on conflict with isConflict flag", () => {
+    addCommit(tmpDir, "conflict.txt", "main version", "main: add conflict file");
+
+    git(tmpDir, "checkout -b feature HEAD~1");
+    addCommit(tmpDir, "conflict.txt", "feature version", "feat: add conflict file");
+
+    git(tmpDir, "checkout main");
+
+    const { getBranchOwnCommits } = require("../bin/utils/git");
+    const { rebaseFromCommits } = require("../bin/core/rebase-stack");
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      const commits = getBranchOwnCommits("feature", "main");
+      commits.reverse();
+
+      assert.throws(
+        () => rebaseFromCommits("feature", "main", commits),
+        (err) => {
+          assert.ok(err instanceof Error);
+          assert.match(err.message, /Conflict detected/);
+          assert.strictEqual(err.isConflict, true);
+          return true;
+        }
+      );
+    } finally {
+      try { git(tmpDir, "cherry-pick --abort"); } catch { /* ignore */ }
+      process.chdir(origCwd);
+    }
+  });
+
+  test("fast-forwards branch when no own commits", () => {
+    git(tmpDir, "checkout -b feature");
+    git(tmpDir, "checkout main");
+    addCommit(tmpDir, "main-new.txt", "new", "main: new work");
+
+    const { rebaseFromCommits } = require("../bin/core/rebase-stack");
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      rebaseFromCommits("feature", "main", []);
+
+      // feature should now point to main's HEAD
+      const featureHash = getCommitHash(tmpDir, "feature");
+      const mainHash = getCommitHash(tmpDir, "main");
+      assert.strictEqual(featureHash, mainHash);
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+
+  test("works when branch is locked by an existing worktree", () => {
+    git(tmpDir, "checkout -b feature");
+    addCommit(tmpDir, "feat.txt", "feat", "feat: feature work");
+
+    git(tmpDir, "checkout main");
+    addCommit(tmpDir, "main-new.txt", "new", "main: new work");
+
+    const { getBranchOwnCommits } = require("../bin/utils/git");
+    const { rebaseFromCommits } = require("../bin/core/rebase-stack");
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    const wtDir = path.join(os.tmpdir(), `rdb-test-locked-stack-${Date.now()}`);
+    try {
+      const commits = getBranchOwnCommits("feature", "main");
+      commits.reverse();
+
+      // Lock the branch in a worktree
+      git(tmpDir, `worktree add "${wtDir}" feature`);
+
+      rebaseFromCommits("feature", "main", commits);
+
+      const featureLog = git(tmpDir, "log feature --oneline");
+      assert.match(featureLog, /feat: feature work/);
+      assert.match(featureLog, /main: new work/);
+    } finally {
+      try { git(tmpDir, `worktree remove "${wtDir}" --force`); } catch { /* ignore */ }
+      process.chdir(origCwd);
+    }
+  });
+
+  test("full stack rebase with upfront commit capture survives hash drift", () => {
+    // This is the critical test: rebase a 3-branch stack onto an updated main.
+    // After rebasing branch-a, its hashes change. If branch-b's commits were
+    // computed at rebase time, git log would return stale parent commits.
+    // With upfront capture, only branch-b's own commits are cherry-picked.
+
+    // main: initial + base commit
+    addCommit(tmpDir, "base.txt", "base", "base on main");
+
+    // branch-a: 2 commits on top of main
+    git(tmpDir, "checkout -b branch-a");
+    addCommit(tmpDir, "a1.txt", "a1", "branch-a: first");
+    addCommit(tmpDir, "a2.txt", "a2", "branch-a: second");
+
+    // branch-b: 1 commit on top of branch-a
+    git(tmpDir, "checkout -b branch-b");
+    addCommit(tmpDir, "b1.txt", "b1", "branch-b: work");
+
+    // branch-c: 1 commit on top of branch-b
+    git(tmpDir, "checkout -b branch-c");
+    addCommit(tmpDir, "c1.txt", "c1", "branch-c: work");
+
+    // main advances with a new commit
+    git(tmpDir, "checkout main");
+    addCommit(tmpDir, "main-new.txt", "new", "main: new work after branches");
+
+    const { getBranchOwnCommits } = require("../bin/utils/git");
+    const { rebaseFromCommits } = require("../bin/core/rebase-stack");
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    try {
+      // Step 1: capture all own commits BEFORE any rebasing
+      const commitsA = getBranchOwnCommits("branch-a", "main");
+      commitsA.reverse();
+      const commitsB = getBranchOwnCommits("branch-b", "branch-a");
+      commitsB.reverse();
+      const commitsC = getBranchOwnCommits("branch-c", "branch-b");
+      commitsC.reverse();
+
+      assert.strictEqual(commitsA.length, 2, "branch-a should have 2 own commits");
+      assert.strictEqual(commitsB.length, 1, "branch-b should have 1 own commit");
+      assert.strictEqual(commitsC.length, 1, "branch-c should have 1 own commit");
+
+      // Step 2: rebase sequentially using pre-captured commits
+      git(tmpDir, "checkout main");
+      rebaseFromCommits("branch-a", "main", commitsA);
+      rebaseFromCommits("branch-b", "branch-a", commitsB);
+      rebaseFromCommits("branch-c", "branch-b", commitsC);
+
+      // Step 3: verify linear ancestry
+      const mainHash = getCommitHash(tmpDir, "main");
+      const aBase = git(tmpDir, "merge-base main branch-a");
+      assert.strictEqual(aBase, mainHash, "branch-a should be based on main HEAD");
+
+      const aHash = getCommitHash(tmpDir, "branch-a");
+      const bBase = git(tmpDir, "merge-base branch-a branch-b");
+      assert.strictEqual(bBase, aHash, "branch-b should be based on branch-a HEAD");
+
+      const bHash = getCommitHash(tmpDir, "branch-b");
+      const cBase = git(tmpDir, "merge-base branch-b branch-c");
+      assert.strictEqual(cBase, bHash, "branch-c should be based on branch-b HEAD");
+
+      // Step 4: verify each branch has correct own commits
+      const aLog = getCommitMessages(tmpDir, "main..branch-a");
+      assert.match(aLog, /branch-a: first/);
+      assert.match(aLog, /branch-a: second/);
+      assert.doesNotMatch(aLog, /branch-b/);
+
+      const bLog = getCommitMessages(tmpDir, "branch-a..branch-b");
+      assert.match(bLog, /branch-b: work/);
+      assert.doesNotMatch(bLog, /branch-a/);
+
+      const cLog = getCommitMessages(tmpDir, "branch-b..branch-c");
+      assert.match(cLog, /branch-c: work/);
+      assert.doesNotMatch(cLog, /branch-b/);
+
+      // Step 5: verify all files exist on the final branch
+      git(tmpDir, "checkout branch-c");
+      assert.ok(fs.existsSync(path.join(tmpDir, "base.txt")));
+      assert.ok(fs.existsSync(path.join(tmpDir, "main-new.txt")));
+      assert.ok(fs.existsSync(path.join(tmpDir, "a1.txt")));
+      assert.ok(fs.existsSync(path.join(tmpDir, "a2.txt")));
+      assert.ok(fs.existsSync(path.join(tmpDir, "b1.txt")));
+      assert.ok(fs.existsSync(path.join(tmpDir, "c1.txt")));
+    } finally {
+      process.chdir(origCwd);
+    }
+  });
+});
+
 describe("Chain Builder", () => {
   const { getBranchesInChain } = require("../bin/core/chain-builder");
 
