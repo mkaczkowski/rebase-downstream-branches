@@ -3,6 +3,7 @@
  */
 
 const { execSync } = require("child_process");
+const os = require("os");
 
 function exec(command, options = {}) {
   try {
@@ -74,20 +75,20 @@ function pullBranch(branch) {
   });
 }
 
-function resetHard(target) {
-  return exec(`git reset --hard ${target}`, { silent: true });
+function resetHard(target, cwd) {
+  return exec(`git reset --hard ${target}`, { silent: true, cwd });
 }
 
-function cherryPick(commitHash) {
-  return exec(`git cherry-pick ${commitHash}`, { silent: true });
+function cherryPick(commitHash, cwd) {
+  return exec(`git cherry-pick ${commitHash}`, { silent: true, cwd });
 }
 
-function cherryPickSkip() {
-  return exec("git cherry-pick --skip", { silent: true, ignoreError: true });
+function cherryPickSkip(cwd) {
+  return exec("git cherry-pick --skip", { silent: true, ignoreError: true, cwd });
 }
 
-function getStatus() {
-  return exec("git status --porcelain", { silent: true }) || "";
+function getStatus(cwd) {
+  return exec("git status --porcelain", { silent: true, cwd }) || "";
 }
 
 function hasConflict(status) {
@@ -110,7 +111,7 @@ function isGitRepository() {
 }
 
 /**
- * Returns the set of branch names currently checked out in a worktree (excluding HEAD).
+ * Returns the set of branch names currently checked out in any worktree.
  */
 function getWorktreeBranches() {
   try {
@@ -127,33 +128,32 @@ function getWorktreeBranches() {
 }
 
 /**
- * Creates a temporary worktree for a branch and returns its path.
- * The caller is responsible for removing it via removeWorktree().
+ * Creates a detached temporary worktree at the given branch's commit and returns its path.
+ * Using --detach avoids the "branch already used by worktree" error when the branch
+ * is already checked out elsewhere. The caller must call removeWorktree() when done.
  */
 function addWorktree(branch) {
-  const tmpDir = require("os").tmpdir() + "/rebase-downstream-" + branch.replace(/\//g, "-") + "-" + Date.now();
-  exec(`git worktree add "${tmpDir}" "${branch}"`, { silent: true });
+  const safeName = branch.replace(/\//g, "-");
+  const tmpDir = `${os.tmpdir()}/rebase-downstream-${safeName}-${Date.now()}`;
+  exec(`git worktree add --detach "${tmpDir}" "${branch}"`, { silent: true });
   return tmpDir;
 }
 
 function removeWorktree(worktreePath) {
-  exec(`git worktree remove "${worktreePath}" --force`, { silent: true, ignoreError: true });
+  exec(`git worktree remove "${worktreePath}" --force`, {
+    silent: true,
+    ignoreError: true,
+  });
 }
 
-function resetHardInDir(target, cwd) {
-  return exec(`git reset --hard "${target}"`, { silent: true, cwd });
-}
-
-function cherryPickInDir(commitHash, cwd) {
-  return exec(`git cherry-pick "${commitHash}"`, { silent: true, cwd });
-}
-
-function cherryPickSkipInDir(cwd) {
-  return exec("git cherry-pick --skip", { silent: true, ignoreError: true, cwd });
-}
-
-function getStatusInDir(cwd) {
-  return exec("git status --porcelain", { silent: true, cwd }) || "";
+/**
+ * Force-updates a branch ref to point to HEAD of the given worktree path.
+ * Uses git update-ref instead of `git branch -f` because git rejects branch
+ * force-updates while the branch is checked out in another worktree.
+ */
+function updateBranchToWorktreeHead(branch, worktreePath) {
+  const newHead = exec("git rev-parse HEAD", { silent: true, cwd: worktreePath }).trim();
+  exec(`git update-ref "refs/heads/${branch}" "${newHead}"`, { silent: true });
 }
 
 module.exports = {
@@ -174,8 +174,5 @@ module.exports = {
   getWorktreeBranches,
   addWorktree,
   removeWorktree,
-  resetHardInDir,
-  cherryPickInDir,
-  cherryPickSkipInDir,
-  getStatusInDir,
+  updateBranchToWorktreeHead,
 };

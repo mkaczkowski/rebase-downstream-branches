@@ -14,51 +14,23 @@ const {
   getWorktreeBranches,
   addWorktree,
   removeWorktree,
-  resetHardInDir,
-  cherryPickInDir,
-  cherryPickSkipInDir,
-  getStatusInDir,
+  updateBranchToWorktreeHead,
 } = require("../utils/git");
 const { log, COLORS } = require("../utils/colors");
 
 /**
- * Rebase a single branch onto a target
+ * Cherry-pick a list of commits in order, handling empty/skippable commits.
+ * @param {string[]} commitHashes - oldest-first
+ * @param {string} onto - target branch name for error messages
+ * @param {string|undefined} cwd - working directory (temp worktree path, or undefined for main repo)
  */
-function rebaseBranch(branch, onto) {
-  log(`\n📦 Rebasing ${branch} onto ${onto}...`, COLORS.cyan);
-
-  // Get the commit hashes before we switch
-  const commitHashes = getBranchOwnCommits(branch, onto);
-
-  if (commitHashes.length === 0) {
-    log("   ⏭️  No unique commits found, skipping", COLORS.yellow);
-    return true;
-  }
-
-  // Reverse to oldest-first order for cherry-picking
-  commitHashes.reverse();
-
-  log(`   Commits to cherry-pick: ${commitHashes.join(", ")}`, COLORS.dim);
-
-  // If the branch is locked by a worktree, operate in a temporary worktree
-  // instead of checking out locally — preserving the existing worktree.
-  const lockedBranches = getWorktreeBranches();
-  if (lockedBranches.has(branch)) {
-    return rebaseBranchViaWorktree(branch, onto, commitHashes);
-  }
-
-  // Normal path: checkout and reset
-  checkoutBranch(branch);
-  resetHard(onto);
-
-  // Cherry-pick all commits in order (oldest first)
+function cherryPickAll(commitHashes, onto, cwd) {
   for (const commitHash of commitHashes) {
     try {
-      cherryPick(commitHash);
+      cherryPick(commitHash, cwd);
       log(`   ✅ Cherry-picked ${commitHash}`, COLORS.green);
     } catch (error) {
-      // Check if there's a conflict
-      const status = getStatus();
+      const status = getStatus(cwd);
       if (hasConflict(status)) {
         const conflictError = new Error(
           `Conflict detected while cherry-picking ${commitHash} onto ${onto}.\n` +
@@ -71,10 +43,9 @@ function rebaseBranch(branch, onto) {
         conflictError.isConflict = true;
         throw conflictError;
       }
-      // Check if cherry-pick is actually in progress (empty commit case)
-      const skipStatus = getStatus();
-      if (skipStatus.trim() === "" || !skipStatus.includes("U")) {
-        cherryPickSkip();
+      // Empty commit (already applied) — skip it
+      if (status.trim() === "" || !status.includes("U")) {
+        cherryPickSkip(cwd);
         log(
           `   ⏭️  Skipped ${commitHash} (no changes or already applied)`,
           COLORS.yellow
@@ -86,52 +57,45 @@ function rebaseBranch(branch, onto) {
       }
     }
   }
-
-  return true;
 }
 
 /**
- * Rebase via a temporary worktree when the branch is locked by an existing worktree.
+ * Rebase a single branch onto a target.
+ * If the branch is locked by an existing worktree, operates via a temp worktree.
  */
-function rebaseBranchViaWorktree(branch, onto, commitHashes) {
-  const tmpDir = addWorktree(branch);
-  try {
-    resetHardInDir(onto, tmpDir);
+function rebaseBranch(branch, onto) {
+  log(`\n📦 Rebasing ${branch} onto ${onto}...`, COLORS.cyan);
 
-    for (const commitHash of commitHashes) {
-      try {
-        cherryPickInDir(commitHash, tmpDir);
-        log(`   ✅ Cherry-picked ${commitHash}`, COLORS.green);
-      } catch (error) {
-        const status = getStatusInDir(tmpDir);
-        if (hasConflict(status)) {
-          const conflictError = new Error(
-            `Conflict detected while cherry-picking ${commitHash} onto ${onto}.\n` +
-              "   Resolve manually:\n" +
-              "      1. Fix conflicts in the files\n" +
-              "      2. git add <files>\n" +
-              "      3. git cherry-pick --continue\n" +
-              "      4. Re-run this script"
-          );
-          conflictError.isConflict = true;
-          throw conflictError;
-        }
-        const skipStatus = getStatusInDir(tmpDir);
-        if (skipStatus.trim() === "" || !skipStatus.includes("U")) {
-          cherryPickSkipInDir(tmpDir);
-          log(
-            `   ⏭️  Skipped ${commitHash} (no changes or already applied)`,
-            COLORS.yellow
-          );
-        } else {
-          throw new Error(
-            `Cherry-pick of ${commitHash} failed unexpectedly: ${error.message}`
-          );
-        }
-      }
+  const commitHashes = getBranchOwnCommits(branch, onto);
+
+  if (commitHashes.length === 0) {
+    log("   ⏭️  No unique commits found, skipping", COLORS.yellow);
+    return true;
+  }
+
+  // Oldest-first for cherry-picking
+  commitHashes.reverse();
+
+  log(`   Commits to cherry-pick: ${commitHashes.join(", ")}`, COLORS.dim);
+
+  const lockedBranches = getWorktreeBranches();
+  if (lockedBranches.has(branch)) {
+    // Branch is in use by a worktree — operate in a temp worktree to avoid
+    // disrupting the existing checkout.
+    const tmpDir = addWorktree(branch);
+    try {
+      resetHard(onto, tmpDir);
+      cherryPickAll(commitHashes, onto, tmpDir);
+      // Detached worktree: commits are on anonymous HEAD, not the branch ref.
+      // Update the branch ref before removing the worktree.
+      updateBranchToWorktreeHead(branch, tmpDir);
+    } finally {
+      removeWorktree(tmpDir);
     }
-  } finally {
-    removeWorktree(tmpDir);
+  } else {
+    checkoutBranch(branch);
+    resetHard(onto);
+    cherryPickAll(commitHashes, onto);
   }
 
   return true;

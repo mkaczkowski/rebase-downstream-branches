@@ -251,6 +251,29 @@ describe("Git Utilities (real repo)", () => {
       process.chdir(origCwd);
     }
   });
+
+  test("getWorktreeBranches returns branches checked out in worktrees", () => {
+    const { getWorktreeBranches } = require("../bin/utils/git");
+    git(tmpDir, "checkout -b feature");
+    addCommit(tmpDir, "wt.txt", "x", "worktree commit");
+    git(tmpDir, "checkout main");
+
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    // Use a named worktree add (not --detach) to simulate a user-created worktree lock.
+    const wtDir = path.join(os.tmpdir(), `rdb-test-wt-${Date.now()}`);
+    try {
+      const before = getWorktreeBranches();
+      assert.ok(!before.has("feature"), "feature should not be locked yet");
+
+      git(tmpDir, `worktree add "${wtDir}" feature`);
+      const after = getWorktreeBranches();
+      assert.ok(after.has("feature"), "feature should be locked after worktree add");
+    } finally {
+      try { git(tmpDir, `worktree remove "${wtDir}" --force`); } catch { /* ignore */ }
+      process.chdir(origCwd);
+    }
+  });
 });
 
 describe("Backup (real repo)", () => {
@@ -442,6 +465,37 @@ describe("Rebase Logic (real repo)", () => {
       const result = rebaseBranch("feature", "main");
       assert.strictEqual(result, true);
     } finally {
+      process.chdir(origCwd);
+    }
+  });
+
+  test("rebaseBranch works when branch is locked by an existing worktree", () => {
+    // Setup: feature has a commit; main gets a new commit; feature is checked
+    // out in a worktree. rebaseBranch must succeed without touching the worktree.
+    git(tmpDir, "checkout -b feature");
+    addCommit(tmpDir, "feat.txt", "feat", "feat: feature work");
+
+    git(tmpDir, "checkout main");
+    addCommit(tmpDir, "main-new.txt", "new", "main: new work");
+
+    const { rebaseBranch } = require("../bin/core/rebase");
+
+    const origCwd = process.cwd();
+    process.chdir(tmpDir);
+    // Lock the branch via a worktree using a known path so rebaseBranch's
+    // internal addWorktree() uses a different (timestamp-based) path.
+    const wtDir = path.join(os.tmpdir(), `rdb-test-locked-${Date.now()}`);
+    try {
+      git(tmpDir, `worktree add "${wtDir}" feature`);
+
+      rebaseBranch("feature", "main");
+
+      // feature branch ref should now include main's new commit
+      const featureLog = git(tmpDir, "log feature --oneline");
+      assert.match(featureLog, /feat: feature work/);
+      assert.match(featureLog, /main: new work/);
+    } finally {
+      try { git(tmpDir, `worktree remove "${wtDir}" --force`); } catch { /* ignore */ }
       process.chdir(origCwd);
     }
   });

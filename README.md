@@ -210,9 +210,8 @@ The entire operation took about 46 seconds to rebase 8 branches with full safety
 1. **Discovery**: Uses `gh pr list --base <branch>` to find open PRs targeting the specified branch
 2. **Chain Building**: Recursively follows the chain by finding PRs that target each discovered branch
 3. **Rebasing**: For each branch in the chain:
-   - Checks out the branch
-   - Resets to the target branch
-   - Cherry-picks all the branch's own commits (in order)
+   - If the branch is free: checks it out, resets to the target, cherry-picks its commits
+   - If the branch is locked by an existing worktree: creates a temporary detached worktree, cherry-picks there, then updates the branch ref via `git update-ref` — leaving the existing worktree undisturbed
    - Force pushes to origin (using `--force-with-lease`)
 4. **Conflict Handling**: If conflicts occur, the script stops and provides instructions for manual resolution
 
