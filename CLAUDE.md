@@ -54,14 +54,14 @@ node bin/rebase-downstream-branches.js --yes
 ### Entry Points
 
 - `bin/rebase-downstream-branches.js` - CLI entry point for PR-chain discovery mode
-- `bin/rebase-stack.js` - CLI entry point for explicit branch list mode
+- `bin/rebase-stack.js` - CLI entry point (auto-discovery default, explicit mode with 2+ args)
 
 ### Core Modules
 
 **bin/cli/**
 - `index.js` - Main CLI orchestration for rebase-downstream-branches
 - `args-parser.js` - Argument parsing for rebase-downstream-branches
-- `rebase-stack-cli.js` - CLI orchestration for rebase-stack (arg parsing, commit capture, execution)
+- `rebase-stack-cli.js` - CLI orchestration for rebase-stack (auto-discovery via `findPRForBranch`, explicit mode, commit capture, execution)
 
 **bin/core/**
 - `cherry-pick.js` - Shared cherry-pick logic (used by both rebase.js and rebase-stack.js)
@@ -71,7 +71,7 @@ node bin/rebase-downstream-branches.js --yes
 
 **bin/utils/**
 - `git.js` - Git command wrappers (uses `execSync`)
-- `github.js` - GitHub CLI integration and host detection
+- `github.js` - GitHub CLI integration, host detection, `findPRsTargeting` (downstream) and `findPRForBranch` (upstream)
 - `validation.js` - Branch name sanitization and protected branch checks
 - `backup.js` - Backup ref creation at `refs/backup/<branch>-<timestamp>`
 - `ui.js` - Console output, prompts, and formatting
@@ -100,12 +100,21 @@ downstream branches are being rebased (the starting branch stays unchanged).
 
 **Chain Discovery**
 
-Uses recursive algorithm in `buildPRChain()`:
+Two discovery directions:
+
+*Downstream* (`rebase-downstream-branches`, `buildPRChain()`):
 1. Start from a base branch
 2. Use `gh pr list --base <branch>` to find PRs targeting it
 3. Follow the chain by using each PR's head branch as the next base
 4. Detect and prevent circular references
 5. Handle multiple PRs targeting same branch (uses first one)
+
+*Upstream* (`rebase-stack`, `discoverStack()`):
+1. Start from the current/specified branch
+2. Use `gh pr list --head <branch>` to find the PR and read its base
+3. Walk upward until hitting a protected branch (main, master, etc.)
+4. Reverse the collected branches to get parent-to-child order
+5. Detect circular references via visited set
 
 **Security Layers**
 
